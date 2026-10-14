@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Document Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,25C30.79,25 29,26.79 29,29V79C29,81.21 30.79,83 33,83H75C77.21,83 79,81.21 79,79V43L61,25H33Z" />
+    <!-- Document Fold -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M61,25V41C61,42.1 61.9,43 63,43H79L61,25Z" />
+    <!-- Primary Cyan Document Bar -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M37,51H71V55H37z" />
+    <!-- Purple Accent Document Bar -->
+    <path
+        android:fillColor="#8B5CF6"
+        android:pathData="M37,59H71V63H37z" />
+    <!-- Secondary Cyan Document Bar -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M37,67H57V71H37z" />
+</vector>

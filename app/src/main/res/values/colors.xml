@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dsc_pure_black">#FF000000</color>
+    <color name="dsc_surface_primary">#FF0A0A0D</color>
+    <color name="dsc_primary_cyan">#FF00E5FF</color>
+    <color name="dsc_secondary_purple">#FF8B5CF6</color>
+    <color name="dsc_white">#FFFFFFFF</color>
+    <color name="dsc_text_secondary">#FFA7A7B3</color>
+    <color name="dsc_divider">#FF25252D</color>
+</resources>

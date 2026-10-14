@@ -1,0 +1,6 @@
+{
+  "name": "PDF Master",
+  "description": "Fast, reliable, offline-first PDF utility: Merge, Split, Compress, Images to PDF, View, Rotate & Organize PDFs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
