@@ -58,7 +58,6 @@ fun PasswordProtectScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
 
     var passwordInput by remember { mutableStateOf("") }
@@ -69,19 +68,7 @@ fun PasswordProtectScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                if (inputStream != null) {
-                    val temp = File.createTempFile("pass_input_", ".pdf", context.cacheDir)
-                    val fos = FileOutputStream(temp)
-                    inputStream.copyTo(fos)
-                    inputStream.close()
-                    fos.close()
-                    viewModel.openPdfInViewer(temp)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            viewModel.importAndSelectPdf(it, openViewer = false)
         }
     }
 

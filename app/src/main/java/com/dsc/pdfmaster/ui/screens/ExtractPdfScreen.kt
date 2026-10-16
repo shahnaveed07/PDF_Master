@@ -147,28 +147,8 @@ fun ExtractPdfScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val displayName = getOriginalFileName(context, uri)
-                    val baseName = if (displayName.endsWith(".pdf", ignoreCase = true)) {
-                        displayName.substring(0, displayName.length - 4)
-                    } else {
-                        displayName
-                    }
-                    val temp = File.createTempFile("extract_${baseName}_", ".pdf", context.cacheDir)
-                    context.contentResolver.openInputStream(uri)?.use { inStream ->
-                        FileOutputStream(temp).use { outStream ->
-                            inStream.copyTo(outStream)
-                        }
-                    }
-                    viewModel.resetExtractionResult()
-                    withContext(Dispatchers.Main) {
-                        viewModel.setSelectedPdfFile(temp)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
+            viewModel.resetExtractionResult()
+            viewModel.importAndSelectPdf(it, openViewer = false)
         }
     }
 

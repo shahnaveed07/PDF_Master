@@ -73,19 +73,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                if (inputStream != null) {
-                    val tempFile = File.createTempFile("picked_doc_", ".pdf", context.cacheDir)
-                    val fos = FileOutputStream(tempFile)
-                    inputStream.copyTo(fos)
-                    inputStream.close()
-                    fos.close()
-                    viewModel.openPdfInViewer(tempFile)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            viewModel.importAndSelectPdf(it, openViewer = true)
         }
     }
 

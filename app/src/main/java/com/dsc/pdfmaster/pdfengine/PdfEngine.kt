@@ -65,13 +65,22 @@ object PdfEngine {
         }
     }
 
-    suspend fun getPdfMetadata(context: Context, uri: Uri): PdfMetadata? = withContext(Dispatchers.IO) {
+    suspend fun getPdfMetadata(context: Context, uri: Uri, password: String? = null): PdfMetadata? = withContext(Dispatchers.IO) {
         try {
             val file = getFileFromUri(context, uri) ?: return@withContext null
             var pageCount = 0
-            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                PdfRenderer(pfd).use { renderer ->
-                    pageCount = renderer.pageCount
+
+            val isEncrypted = checkPasswordProtected(context, file)
+            if (isEncrypted) {
+                PDFBoxResourceLoader.init(context)
+                val doc = if (!password.isNullOrBlank()) PDDocument.load(file, password) else PDDocument.load(file)
+                pageCount = doc.numberOfPages
+                doc.close()
+            } else {
+                ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    PdfRenderer(pfd).use { renderer ->
+                        pageCount = renderer.pageCount
+                    }
                 }
             }
 
@@ -92,8 +101,12 @@ object PdfEngine {
         context: Context,
         pdfFile: File,
         pageIndex: Int,
-        targetWidth: Int = 800
+        targetWidth: Int = 800,
+        password: String? = null
     ): Bitmap? = withContext(Dispatchers.IO) {
+        if (!password.isNullOrBlank()) {
+            return@withContext renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, targetWidth, password)
+        }
         try {
             ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
                 PdfRenderer(pfd).use { renderer ->
@@ -114,9 +127,42 @@ object PdfEngine {
                     }
                 }
             }
+        } catch (e: SecurityException) {
+            if (!password.isNullOrEmpty()) {
+                return@withContext renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, targetWidth, password)
+            }
+            null
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    private fun renderPageBitmapWithPdfBox(
+        context: Context,
+        pdfFile: File,
+        pageIndex: Int,
+        targetWidth: Int,
+        password: String
+    ): Bitmap? {
+        try {
+            PDFBoxResourceLoader.init(context)
+            val doc = PDDocument.load(pdfFile, password)
+            if (pageIndex < 0 || pageIndex >= doc.numberOfPages) {
+                doc.close()
+                return null
+            }
+            val pdfBoxRenderer = com.tom_roush.pdfbox.rendering.PDFRenderer(doc)
+            val originalPage = doc.getPage(pageIndex)
+            val cropBox = originalPage.cropBox
+            val pageWidth = cropBox.width
+            val scale = (targetWidth.toFloat() / pageWidth)
+            val bitmap = pdfBoxRenderer.renderImage(pageIndex, scale * 1.5f)
+            doc.close()
+            return bitmap
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
         }
     }
 
@@ -571,10 +617,11 @@ object PdfEngine {
         pdfFile: File,
         userPassword: String,
         ownerPassword: String = userPassword,
-        outputName: String
+        outputName: String = "Protected_${System.currentTimeMillis()}.pdf",
+        inPlace: Boolean = false
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L || userPassword.isBlank()) return@withContext null
-        var outputFile: File? = null
+        val tempEncrypted = File(context.cacheDir, "temp_encrypt_${System.currentTimeMillis()}.pdf")
         try {
             PDFBoxResourceLoader.init(context)
             val doc = PDDocument.load(pdfFile)
@@ -588,16 +635,45 @@ object PdfEngine {
             policy.encryptionKeyLength = 128
             doc.protect(policy)
 
-            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            outputFile = getUniqueOutputFile(outputDir, outputName)
-
-            doc.save(outputFile)
+            doc.save(tempEncrypted)
             doc.close()
 
-            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+            // Verify encryption and password validity before finalizing
+            val isEncrypted = checkPasswordProtected(context, tempEncrypted)
+            val isPasswordValid = verifyPdfPassword(context, tempEncrypted, userPassword)
+
+            if (!isEncrypted || !isPasswordValid) {
+                tempEncrypted.delete()
+                return@withContext null
+            }
+
+            if (inPlace && pdfFile.canWrite()) {
+                // Safely overwrite original file in-place
+                FileOutputStream(pdfFile).use { fos ->
+                    tempEncrypted.inputStream().use { fis ->
+                        fis.copyTo(fos)
+                    }
+                }
+                tempEncrypted.delete()
+                return@withContext pdfFile
+            } else {
+                val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
+                val outputFile = getUniqueOutputFile(outputDir, outputName)
+                if (tempEncrypted.renameTo(outputFile)) {
+                    return@withContext outputFile
+                } else {
+                    FileOutputStream(outputFile).use { fos ->
+                        tempEncrypted.inputStream().use { fis ->
+                            fis.copyTo(fos)
+                        }
+                    }
+                    tempEncrypted.delete()
+                    return@withContext outputFile
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            outputFile?.delete()
+            tempEncrypted.delete()
             null
         }
     }

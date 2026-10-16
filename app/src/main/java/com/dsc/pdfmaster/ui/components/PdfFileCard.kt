@@ -68,7 +68,7 @@ fun PdfFileCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .testTag("pdf_file_card_${pdf.id}"),
+            .testTag("pdf_file_card_${pdf.filePath.hashCode()}"),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -142,7 +142,7 @@ fun PdfFileCard(
 
             IconButton(
                 onClick = onToggleFavorite,
-                modifier = Modifier.testTag("favorite_button_${pdf.id}")
+                modifier = Modifier.testTag("favorite_button_${pdf.filePath.hashCode()}")
             ) {
                 Icon(
                     imageVector = if (pdf.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,

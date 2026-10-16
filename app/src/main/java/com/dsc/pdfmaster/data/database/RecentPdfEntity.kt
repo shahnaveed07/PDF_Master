@@ -5,8 +5,7 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "recent_pdfs")
 data class RecentPdfEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val filePath: String,
+    @PrimaryKey val filePath: String,
     val fileName: String,
     val fileSizeBytes: Long,
     val pageCount: Int,

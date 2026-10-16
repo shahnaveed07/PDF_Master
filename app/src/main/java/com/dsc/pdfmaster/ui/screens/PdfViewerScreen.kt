@@ -23,9 +23,14 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -55,6 +61,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsc.pdfmaster.pdfengine.PdfEngine
@@ -78,24 +86,34 @@ fun PdfViewerScreen(
 
     var pageCount by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
+    var isPasswordProtected by remember { mutableStateOf(false) }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var isPasswordVisible by remember { mutableStateOf(false) }
+    var verifiedPassword by remember { mutableStateOf<String?>(null) }
+
     val renderedBitmaps = remember { mutableStateListOf<Bitmap?>() }
     val lazyListState = rememberLazyListState()
 
-    LaunchedEffect(currentPdfFile) {
+    LaunchedEffect(currentPdfFile, verifiedPassword) {
         val file = currentPdfFile
         if (file != null && file.exists()) {
             isLoading = true
             renderedBitmaps.clear()
             withContext(Dispatchers.IO) {
                 try {
-                    val meta = PdfEngine.getPdfMetadata(context, android.net.Uri.fromFile(file))
-                    val count = meta?.pageCount ?: 0
-                    pageCount = count
+                    val isEncrypted = PdfEngine.checkPasswordProtected(context, file)
+                    isPasswordProtected = isEncrypted && verifiedPassword == null
 
-                    // Pre-fill the list with nulls. The items will be loaded lazily below.
-                    val initialList = MutableList<Bitmap?>(count) { null }
-                    withContext(Dispatchers.Main) {
-                        renderedBitmaps.addAll(initialList)
+                    if (!isPasswordProtected) {
+                        val meta = PdfEngine.getPdfMetadata(context, android.net.Uri.fromFile(file), verifiedPassword)
+                        val count = meta?.pageCount ?: 0
+                        pageCount = count
+
+                        val initialList = MutableList<Bitmap?>(count) { null }
+                        withContext(Dispatchers.Main) {
+                            renderedBitmaps.addAll(initialList)
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -194,6 +212,102 @@ fun PdfViewerScreen(
                     }
                 }
             }
+        } else if (isPasswordProtected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Password Protected PDF",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "This document is encrypted. Enter the password to unlock.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = passwordInput,
+                            onValueChange = {
+                                passwordInput = it
+                                passwordError = null
+                            },
+                            label = { Text("Enter Password") },
+                            singleLine = true,
+                            isError = passwordError != null,
+                            supportingText = {
+                                passwordError?.let { err ->
+                                    Text(text = err, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                                }
+                            },
+                            visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                    Icon(
+                                        imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "Toggle Visibility"
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("viewer_password_field")
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                if (passwordInput.isNotBlank() && currentPdfFile != null) {
+                                    scope.launch(Dispatchers.IO) {
+                                        val isValid = PdfEngine.verifyPdfPassword(context, currentPdfFile!!, passwordInput)
+                                        withContext(Dispatchers.Main) {
+                                            if (isValid) {
+                                                verifiedPassword = passwordInput
+                                                passwordError = null
+                                            } else {
+                                                passwordError = "Incorrect password. Please try again."
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = passwordInput.isNotBlank(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("unlock_pdf_button"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.LockOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Unlock Document", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         } else if (isLoading && renderedBitmaps.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -222,11 +336,11 @@ fun PdfViewerScreen(
                     items(renderedBitmaps.size) { index ->
                         val bitmap = renderedBitmaps[index]
                         
-                        LaunchedEffect(index) {
+                        LaunchedEffect(index, verifiedPassword) {
                             if (bitmap == null && currentPdfFile != null) {
                                 val file = currentPdfFile!!
                                 withContext(Dispatchers.IO) {
-                                    val renderedBmp = PdfEngine.renderPageBitmap(context, file, index, targetWidth = 720)
+                                    val renderedBmp = PdfEngine.renderPageBitmap(context, file, index, targetWidth = 720, password = verifiedPassword)
                                     withContext(Dispatchers.Main) {
                                         renderedBitmaps[index] = renderedBmp
                                     }

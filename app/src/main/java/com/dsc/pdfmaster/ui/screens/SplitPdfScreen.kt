@@ -72,19 +72,7 @@ fun SplitPdfScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                if (inputStream != null) {
-                    val temp = File.createTempFile("split_input_", ".pdf", context.cacheDir)
-                    val fos = FileOutputStream(temp)
-                    inputStream.copyTo(fos)
-                    inputStream.close()
-                    fos.close()
-                    viewModel.openPdfInViewer(temp)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            viewModel.importAndSelectPdf(it, openViewer = false)
         }
     }
 

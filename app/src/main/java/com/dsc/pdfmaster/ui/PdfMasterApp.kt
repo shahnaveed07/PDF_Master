@@ -1,5 +1,6 @@
 package com.dsc.pdfmaster.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,10 @@ fun PdfMasterApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    BackHandler(enabled = currentRoute != ScreenRoute.HOME) {
+        viewModel.navigateBack()
+    }
 
     LaunchedEffect(snackbarMessage) {
         val msg = snackbarMessage
@@ -99,39 +104,39 @@ fun PdfMasterApp(
                         )
                         ScreenRoute.PDF_VIEWER -> PdfViewerScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.EXTRACT_PAGES -> ExtractPdfScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.MERGE_PDF -> MergePdfScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.SPLIT_PDF -> SplitPdfScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.COMPRESS_PDF -> CompressPdfScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.IMAGES_TO_PDF -> ImagesToPdfScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.MANAGE_PAGES -> ManagePagesScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.PASSWORD_PROTECT -> PasswordProtectScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                         ScreenRoute.SETTINGS -> SettingsScreen(
                             viewModel = viewModel,
-                            onBack = { viewModel.navigateTo(ScreenRoute.HOME) }
+                            onBack = { viewModel.navigateBack() }
                         )
                     }
                 }

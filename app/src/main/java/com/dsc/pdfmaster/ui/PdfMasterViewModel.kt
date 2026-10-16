@@ -118,6 +118,8 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             initialValue = emptyList()
         )
 
+    private val backStack = ArrayDeque<ScreenRoute>(listOf(ScreenRoute.HOME))
+
     init {
         viewModelScope.launch {
             // Ensure sample PDF exists on first launch
@@ -130,7 +132,28 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun navigateTo(route: ScreenRoute) {
         _isProcessing.value = false
+        if (_currentRoute.value == route) return
+
+        if (route in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
+            backStack.clear()
+            backStack.addLast(ScreenRoute.HOME)
+            if (route != ScreenRoute.HOME) {
+                backStack.addLast(route)
+            }
+        } else {
+            backStack.addLast(route)
+        }
         _currentRoute.value = route
+    }
+
+    fun navigateBack(): Boolean {
+        _isProcessing.value = false
+        if (backStack.size > 1) {
+            backStack.removeLast()
+            _currentRoute.value = backStack.last()
+            return true
+        }
+        return false
     }
 
     fun resetProcessingState() {
@@ -161,7 +184,22 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             repository.registerPdfFile(file)
         }
-        _currentRoute.value = ScreenRoute.PDF_VIEWER
+        navigateTo(ScreenRoute.PDF_VIEWER)
+    }
+
+    fun importAndSelectPdf(uri: Uri, openViewer: Boolean = false) {
+        viewModelScope.launch {
+            val file = repository.getOrCreateManagedFileFromUri(uri)
+            if (file != null) {
+                _selectedPdfFile.value = file
+                repository.registerPdfFile(file)
+                if (openViewer) {
+                    navigateTo(ScreenRoute.PDF_VIEWER)
+                }
+            } else {
+                _userNotification.value = "Failed to load selected PDF document"
+            }
+        }
     }
 
     fun toggleFavorite(filePath: String, currentStatus: Boolean) {
@@ -432,8 +470,8 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 val result = repository.protectPdf(file, password, outputName)
                 if (result != null) {
                     _selectedPdfFile.value = result
-                    _userNotification.value = "Encrypted PDF created: ${result.name}"
-                    _currentRoute.value = ScreenRoute.PDF_VIEWER
+                    _userNotification.value = "Document encrypted successfully!"
+                    navigateTo(ScreenRoute.PDF_VIEWER)
                 } else {
                     _userNotification.value = "Failed to encrypt PDF."
                 }

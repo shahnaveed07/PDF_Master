@@ -142,6 +142,53 @@ class PdfEngineTest {
     }
 
     @Test
+    fun testInPlacePasswordProtection() {
+        runBlocking {
+            val managedDir = File(context.filesDir, "imported_pdfs").apply { mkdirs() }
+            val source = createTestPdf(File(managedDir, "managed_doc.pdf"), 2)
+            val password = "InPlacePassword456"
+
+            val resultFile = PdfEngine.protectPdf(
+                context = context,
+                pdfFile = source,
+                userPassword = password,
+                ownerPassword = password,
+                inPlace = true
+            )
+
+            assertNotNull(resultFile)
+            assertEquals(source.absolutePath, resultFile!!.absolutePath)
+            assertTrue(PdfEngine.checkPasswordProtected(context, resultFile))
+            assertTrue(PdfEngine.verifyPdfPassword(context, resultFile, password))
+
+            source.delete()
+        }
+    }
+
+    @Test
+    fun testFailedEncryptionPreservesOriginal() {
+        runBlocking {
+            val source = createTestPdf(File(context.cacheDir, "unmodified.pdf"), 2)
+            val originalLength = source.length()
+
+            // Passing empty password should fail and return null
+            val resultFile = PdfEngine.protectPdf(
+                context = context,
+                pdfFile = source,
+                userPassword = "",
+                ownerPassword = "",
+                inPlace = true
+            )
+
+            assertTrue(resultFile == null)
+            assertTrue(source.exists())
+            assertEquals(originalLength, source.length())
+
+            source.delete()
+        }
+    }
+
+    @Test
     fun testCompressPdf() {
         runBlocking {
             val source = createTestPdf(File(context.cacheDir, "compress_src.pdf"), 2)
