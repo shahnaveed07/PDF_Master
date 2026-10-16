@@ -8,7 +8,6 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -20,8 +19,7 @@ enum class PdfToolType {
     IMAGES_TO_PDF,
     VIEW_PDF,
     MANAGE_PAGES,
-    PASSWORD_PROTECT,
-    SCANNER_OCR
+    PASSWORD_PROTECT
 }
 
 data class PdfTool(
@@ -89,12 +87,5 @@ val pdfToolsList = listOf(
         title = "Encrypt & Lock",
         description = "Secure PDF files with custom user passwords",
         icon = Icons.Default.Lock
-    ),
-    PdfTool(
-        type = PdfToolType.SCANNER_OCR,
-        title = "Smart Doc Scan",
-        description = "Scan paper docs & convert to clean searchable PDFs",
-        icon = Icons.Default.QrCodeScanner,
-        badge = "SMART"
     )
 )

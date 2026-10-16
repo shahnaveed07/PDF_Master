@@ -215,10 +215,6 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 _currentRoute.value = ScreenRoute.MANAGE_PAGES
             }
             PdfToolType.PASSWORD_PROTECT -> _currentRoute.value = ScreenRoute.PASSWORD_PROTECT
-            PdfToolType.SCANNER_OCR -> {
-                _userNotification.value = "Doc Scanner ready - Select images to generate searchable PDF"
-                _currentRoute.value = ScreenRoute.IMAGES_TO_PDF
-            }
         }
     }
 

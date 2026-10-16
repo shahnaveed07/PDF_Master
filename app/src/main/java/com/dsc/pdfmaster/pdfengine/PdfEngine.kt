@@ -68,11 +68,12 @@ object PdfEngine {
     suspend fun getPdfMetadata(context: Context, uri: Uri): PdfMetadata? = withContext(Dispatchers.IO) {
         try {
             val file = getFileFromUri(context, uri) ?: return@withContext null
-            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(pfd)
-            val pageCount = renderer.pageCount
-            renderer.close()
-            pfd.close()
+            var pageCount = 0
+            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    pageCount = renderer.pageCount
+                }
+            }
 
             PdfMetadata(
                 fileName = file.name,
@@ -94,27 +95,25 @@ object PdfEngine {
         targetWidth: Int = 800
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            val pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(pfd)
-            if (pageIndex < 0 || pageIndex >= renderer.pageCount) {
-                renderer.close()
-                pfd.close()
-                return@withContext null
+            ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    if (pageIndex < 0 || pageIndex >= renderer.pageCount) {
+                        return@withContext null
+                    }
+
+                    renderer.openPage(pageIndex).use { page ->
+                        val aspectRatio = page.height.toFloat() / page.width.toFloat()
+                        val targetHeight = (targetWidth * aspectRatio).toInt().coerceAtLeast(1)
+
+                        val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(bitmap)
+                        canvas.drawColor(Color.WHITE)
+
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        return@withContext bitmap
+                    }
+                }
             }
-
-            val page = renderer.openPage(pageIndex)
-            val aspectRatio = page.height.toFloat() / page.width.toFloat()
-            val targetHeight = (targetWidth * aspectRatio).toInt().coerceAtLeast(1)
-
-            val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            canvas.drawColor(Color.WHITE)
-
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            page.close()
-            renderer.close()
-            pfd.close()
-            bitmap
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -127,24 +126,24 @@ object PdfEngine {
     ): List<PdfPageItem> = withContext(Dispatchers.IO) {
         val list = mutableListOf<PdfPageItem>()
         try {
-            val pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(pfd)
-            val count = renderer.pageCount
+            ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    val count = renderer.pageCount
 
-            for (i in 0 until count) {
-                val page = renderer.openPage(i)
-                val targetWidth = 300
-                val targetHeight = (targetWidth * (page.height.toFloat() / page.width.toFloat())).toInt().coerceAtLeast(1)
-                val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bitmap)
-                canvas.drawColor(Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                page.close()
+                    for (i in 0 until count) {
+                        renderer.openPage(i).use { page ->
+                            val targetWidth = 300
+                            val targetHeight = (targetWidth * (page.height.toFloat() / page.width.toFloat())).toInt().coerceAtLeast(1)
+                            val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                            val canvas = Canvas(bitmap)
+                            canvas.drawColor(Color.WHITE)
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
-                list.add(PdfPageItem(pageIndex = i, bitmap = bitmap))
+                            list.add(PdfPageItem(pageIndex = i, bitmap = bitmap))
+                        }
+                    }
+                }
             }
-            renderer.close()
-            pfd.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -158,10 +157,11 @@ object PdfEngine {
         outputFileName: String = "Images_${System.currentTimeMillis()}.pdf"
     ): File? = withContext(Dispatchers.IO) {
         if (imageUris.isEmpty()) return@withContext null
+        var outputFile: File? = null
         try {
             val pdfDocument = PdfDocument()
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            val outputFile = getUniqueOutputFile(outputDir, outputFileName)
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
             for ((index, uri) in imageUris.withIndex()) {
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -185,42 +185,46 @@ object PdfEngine {
                 }
 
                 if (originalBitmap != null) {
-                    val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, index + 1).create()
-                    val page = pdfDocument.startPage(pageInfo)
-                    val canvas = page.canvas
+                    try {
+                        val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, index + 1).create()
+                        val page = pdfDocument.startPage(pageInfo)
+                        val canvas = page.canvas
 
-                    canvas.drawColor(Color.WHITE)
+                        canvas.drawColor(Color.WHITE)
 
-                    val margin = 20
-                    val maxWidth = A4_WIDTH - (margin * 2)
-                    val maxHeight = A4_HEIGHT - (margin * 2)
+                        val margin = 20
+                        val maxWidth = A4_WIDTH - (margin * 2)
+                        val maxHeight = A4_HEIGHT - (margin * 2)
 
-                    val srcWidth = originalBitmap.width
-                    val srcHeight = originalBitmap.height
-                    val scale = Math.min(maxWidth.toFloat() / srcWidth, maxHeight.toFloat() / srcHeight)
+                        val srcWidth = originalBitmap.width
+                        val srcHeight = originalBitmap.height
+                        val scale = Math.min(maxWidth.toFloat() / srcWidth, maxHeight.toFloat() / srcHeight)
 
-                    val destWidth = (srcWidth * scale).toInt()
-                    val destHeight = (srcHeight * scale).toInt()
+                        val destWidth = (srcWidth * scale).toInt()
+                        val destHeight = (srcHeight * scale).toInt()
 
-                    val left = margin + (maxWidth - destWidth) / 2
-                    val top = margin + (maxHeight - destHeight) / 2
+                        val left = margin + (maxWidth - destWidth) / 2
+                        val top = margin + (maxHeight - destHeight) / 2
 
-                    val destRect = Rect(left, top, left + destWidth, top + destHeight)
-                    canvas.drawBitmap(originalBitmap, null, destRect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+                        val destRect = Rect(left, top, left + destWidth, top + destHeight)
+                        canvas.drawBitmap(originalBitmap, null, destRect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
 
-                    pdfDocument.finishPage(page)
-                    originalBitmap.recycle()
+                        pdfDocument.finishPage(page)
+                    } finally {
+                        originalBitmap.recycle()
+                    }
                 }
             }
 
-            val fos = FileOutputStream(outputFile)
-            pdfDocument.writeTo(fos)
-            fos.close()
+            FileOutputStream(outputFile).use { fos ->
+                pdfDocument.writeTo(fos)
+            }
             pdfDocument.close()
 
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {
             e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }
@@ -233,6 +237,7 @@ object PdfEngine {
         passwords: Map<File, String> = emptyMap()
     ): File? = withContext(Dispatchers.IO) {
         if (pdfFiles.size < 2) return@withContext null
+        var outputFile: File? = null
         try {
             PDFBoxResourceLoader.init(context)
             val mergedDoc = PDDocument()
@@ -249,7 +254,10 @@ object PdfEngine {
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    continue
+                    // Fail the entire merge if any file fails to load
+                    mergedDoc.close()
+                    loadedDocs.forEach { it.close() }
+                    return@withContext null
                 }
                 loadedDocs.add(doc)
                 for (i in 0 until doc.numberOfPages) {
@@ -265,7 +273,7 @@ object PdfEngine {
             }
 
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            val outputFile = getUniqueOutputFile(outputDir, outputFileName)
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
             mergedDoc.save(outputFile)
             mergedDoc.close()
@@ -274,6 +282,7 @@ object PdfEngine {
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {
             e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }
@@ -402,6 +411,7 @@ object PdfEngine {
         password: String? = null
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L || pageIndicesToKeep.isEmpty()) return@withContext null
+        var outputFile: File? = null
         try {
             PDFBoxResourceLoader.init(context)
             val sourceDoc = if (!password.isNullOrBlank()) {
@@ -424,7 +434,7 @@ object PdfEngine {
             }
 
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            val outputFile = getUniqueOutputFile(outputDir, outputFileName)
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
             newDoc.save(outputFile)
             newDoc.close()
@@ -433,6 +443,7 @@ object PdfEngine {
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {
             e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }
@@ -446,6 +457,7 @@ object PdfEngine {
         password: String? = null
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L) return@withContext null
+        var outputFile: File? = null
         try {
             PDFBoxResourceLoader.init(context)
             val doc = if (!password.isNullOrBlank()) {
@@ -461,25 +473,39 @@ object PdfEngine {
                     if (resources.isImageXObject(name)) {
                         val imageObj = resources.getXObject(name) as? PDImageXObject ?: continue
                         val bitmap = try { imageObj.image } catch (e: Exception) { null } ?: continue
-                        val stream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, level.qualityPercentage, stream)
-                        val compressedBytes = stream.toByteArray()
-                        val newImage = JPEGFactory.createFromByteArray(doc, compressedBytes)
-                        resources.put(name, newImage)
+                        
+                        // Avoid converting images with transparency to JPEG as it will render a black background
+                        if (!bitmap.hasAlpha()) {
+                            val stream = ByteArrayOutputStream()
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, level.qualityPercentage, stream)
+                            val compressedBytes = stream.toByteArray()
+                            val newImage = JPEGFactory.createFromByteArray(doc, compressedBytes)
+                            resources.put(name, newImage)
+                        }
                         bitmap.recycle()
                     }
                 }
             }
 
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            val outputFile = getUniqueOutputFile(outputDir, outputFileName)
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
             doc.save(outputFile)
             doc.close()
 
-            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+            if (outputFile.exists() && outputFile.length() > 0) {
+                // Return original if compression actually increased file size
+                if (outputFile.length() >= pdfFile.length()) {
+                    outputFile.delete()
+                    return@withContext pdfFile
+                }
+                outputFile 
+            } else {
+                null
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }
@@ -493,6 +519,7 @@ object PdfEngine {
         password: String? = null
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L) return@withContext null
+        var outputFile: File? = null
         try {
             PDFBoxResourceLoader.init(context)
             val sourceDoc = if (!password.isNullOrBlank()) {
@@ -522,7 +549,7 @@ object PdfEngine {
             }
 
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            val outputFile = getUniqueOutputFile(outputDir, outputFileName)
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
             newDoc.save(outputFile)
             newDoc.close()
@@ -531,6 +558,7 @@ object PdfEngine {
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {
             e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }
@@ -546,6 +574,7 @@ object PdfEngine {
         outputName: String
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L || userPassword.isBlank()) return@withContext null
+        var outputFile: File? = null
         try {
             PDFBoxResourceLoader.init(context)
             val doc = PDDocument.load(pdfFile)
@@ -560,7 +589,7 @@ object PdfEngine {
             doc.protect(policy)
 
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            val outputFile = getUniqueOutputFile(outputDir, outputName)
+            outputFile = getUniqueOutputFile(outputDir, outputName)
 
             doc.save(outputFile)
             doc.close()
@@ -568,6 +597,7 @@ object PdfEngine {
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {
             e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }

@@ -92,13 +92,10 @@ fun PdfViewerScreen(
                     val count = meta?.pageCount ?: 0
                     pageCount = count
 
-                    val loadedList = mutableListOf<Bitmap?>()
-                    for (i in 0 until count) {
-                        val bmp = PdfEngine.renderPageBitmap(context, file, i, targetWidth = 720)
-                        loadedList.add(bmp)
-                    }
+                    // Pre-fill the list with nulls. The items will be loaded lazily below.
+                    val initialList = MutableList<Bitmap?>(count) { null }
                     withContext(Dispatchers.Main) {
-                        renderedBitmaps.addAll(loadedList)
+                        renderedBitmaps.addAll(initialList)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -224,6 +221,19 @@ fun PdfViewerScreen(
                 ) {
                     items(renderedBitmaps.size) { index ->
                         val bitmap = renderedBitmaps[index]
+                        
+                        LaunchedEffect(index) {
+                            if (bitmap == null && currentPdfFile != null) {
+                                val file = currentPdfFile!!
+                                withContext(Dispatchers.IO) {
+                                    val renderedBmp = PdfEngine.renderPageBitmap(context, file, index, targetWidth = 720)
+                                    withContext(Dispatchers.Main) {
+                                        renderedBitmaps[index] = renderedBmp
+                                    }
+                                }
+                            }
+                        }
+                        
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
