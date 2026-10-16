@@ -1,5 +1,7 @@
 package com.dsc.pdfmaster.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -23,17 +25,25 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -91,6 +101,10 @@ fun PdfViewerScreen(
     var passwordError by remember { mutableStateOf<String?>(null) }
     var isPasswordVisible by remember { mutableStateOf(false) }
     var verifiedPassword by remember { mutableStateOf<String?>(null) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showFileInfoDialog by remember { mutableStateOf(false) }
+    var renameInputText by remember { mutableStateOf("") }
 
     val renderedBitmaps = remember { mutableStateListOf<Bitmap?>() }
     val lazyListState = rememberLazyListState()
@@ -160,19 +174,91 @@ fun PdfViewerScreen(
             },
             actions = {
                 IconButton(
-                    onClick = {
-                        currentPdfFile?.let { viewModel.loadPagesForPdf(it) }
-                        viewModel.navigateTo(ScreenRoute.MANAGE_PAGES)
-                    },
-                    modifier = Modifier.testTag("viewer_organize_button")
+                    onClick = { showOverflowMenu = true },
+                    modifier = Modifier.testTag("viewer_overflow_button")
                 ) {
-                    Icon(Icons.Default.SwapVert, contentDescription = "Organize Pages")
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
                 }
-                IconButton(
-                    onClick = { viewModel.navigateTo(ScreenRoute.COMPRESS_PDF) },
-                    modifier = Modifier.testTag("viewer_compress_button")
+
+                DropdownMenu(
+                    expanded = showOverflowMenu,
+                    onDismissRequest = { showOverflowMenu = false }
                 ) {
-                    Icon(Icons.Default.Compress, contentDescription = "Compress PDF")
+                    if (isPasswordProtected || verifiedPassword != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove Password") },
+                            leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.navigateTo(ScreenRoute.REMOVE_PASSWORD)
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Protect PDF") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.navigateTo(ScreenRoute.PASSWORD_PROTECT)
+                            }
+                        )
+                    }
+
+                    DropdownMenuItem(
+                        text = { Text("Compress PDF") },
+                        leadingIcon = { Icon(Icons.Default.Compress, contentDescription = null) },
+                        onClick = {
+                            showOverflowMenu = false
+                            viewModel.navigateTo(ScreenRoute.COMPRESS_PDF)
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        onClick = {
+                            showOverflowMenu = false
+                            currentPdfFile?.let { sharePdfFile(context, it) }
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Print") },
+                        leadingIcon = { Icon(Icons.Default.Print, contentDescription = null) },
+                        onClick = {
+                            showOverflowMenu = false
+                            currentPdfFile?.let { printPdfFile(context, it) }
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Rename") },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        onClick = {
+                            showOverflowMenu = false
+                            renameInputText = currentPdfFile?.name?.removeSuffix(".pdf") ?: ""
+                            showRenameDialog = true
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("File Info") },
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        onClick = {
+                            showOverflowMenu = false
+                            showFileInfoDialog = true
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("Manage Pages") },
+                        leadingIcon = { Icon(Icons.Default.SwapVert, contentDescription = null) },
+                        onClick = {
+                            showOverflowMenu = false
+                            currentPdfFile?.let { viewModel.loadPagesForPdf(it) }
+                            viewModel.navigateTo(ScreenRoute.MANAGE_PAGES)
+                        }
+                    )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -412,5 +498,134 @@ fun PdfViewerScreen(
                 }
             }
         }
+    }
+
+    // Rename Dialog
+    if (showRenameDialog && currentPdfFile != null) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename PDF File", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Enter a new file name:", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = renameInputText,
+                        onValueChange = { renameInputText = it },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("rename_input_field")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renameInputText.isNotBlank()) {
+                            viewModel.renamePdf(currentPdfFile!!, renameInputText.trim())
+                            showRenameDialog = false
+                        }
+                    },
+                    modifier = Modifier.testTag("confirm_rename_button")
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showRenameDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // File Info Dialog
+    if (showFileInfoDialog && currentPdfFile != null) {
+        val file = currentPdfFile!!
+        val formattedDate = remember(file.lastModified()) {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))
+        }
+        AlertDialog(
+            onDismissRequest = { showFileInfoDialog = false },
+            title = { Text("File Information", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Name: ${file.name}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("Size: ${PdfEngine.formatFileSize(file.length())}", fontSize = 13.sp)
+                    Text("Pages: $pageCount", fontSize = 13.sp)
+                    Text("Path: ${file.absolutePath}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Modified: $formattedDate", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showFileInfoDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+}
+
+private fun sharePdfFile(context: android.content.Context, file: File) {
+    try {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share PDF via"))
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+private fun printPdfFile(context: android.content.Context, file: File) {
+    try {
+        val printManager = context.getSystemService(android.content.Context.PRINT_SERVICE) as? android.print.PrintManager
+        val printAdapter = object : android.print.PrintDocumentAdapter() {
+            override fun onLayout(
+                oldAttributes: android.print.PrintAttributes?,
+                newAttributes: android.print.PrintAttributes?,
+                cancellationSignal: android.os.CancellationSignal?,
+                callback: LayoutResultCallback?,
+                extras: android.os.Bundle?
+            ) {
+                if (cancellationSignal?.isCanceled == true) {
+                    callback?.onLayoutCancelled()
+                    return
+                }
+                val info = android.print.PrintDocumentInfo.Builder(file.name)
+                    .setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                    .build()
+                callback?.onLayoutFinished(info, true)
+            }
+
+            override fun onWrite(
+                pages: Array<out android.print.PageRange>?,
+                destination: android.os.ParcelFileDescriptor?,
+                cancellationSignal: android.os.CancellationSignal?,
+                callback: WriteResultCallback?
+            ) {
+                try {
+                    file.inputStream().use { input ->
+                        android.os.ParcelFileDescriptor.AutoCloseOutputStream(destination).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    callback?.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES))
+                } catch (e: Exception) {
+                    callback?.onWriteFailed(e.localizedMessage)
+                }
+            }
+        }
+        printManager?.print("PDF_Master_${file.name}", printAdapter, null)
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }

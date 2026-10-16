@@ -16,8 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -57,6 +59,8 @@ fun PdfFileCard(
     onShare: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onRemoveFromRecent: (() -> Unit)? = null,
+    onFileInfo: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -171,6 +175,16 @@ fun PdfFileCard(
                             onShare()
                         }
                     )
+                    if (onFileInfo != null) {
+                        DropdownMenuItem(
+                            text = { Text("File Info") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onFileInfo()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Rename") },
                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
@@ -179,8 +193,18 @@ fun PdfFileCard(
                             onRename()
                         }
                     )
+                    if (onRemoveFromRecent != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from Recent") },
+                            leadingIcon = { Icon(Icons.Default.RemoveCircleOutline, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onRemoveFromRecent()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
-                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        text = { Text("Delete File", color = MaterialTheme.colorScheme.error) },
                         leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                         onClick = {
                             showMenu = false

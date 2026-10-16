@@ -23,6 +23,8 @@ import com.dsc.pdfmaster.ui.components.PdfBottomNavigationBar
 import com.dsc.pdfmaster.ui.components.PdfTopAppBar
 import com.dsc.pdfmaster.ui.components.ProcessingDialog
 import com.dsc.pdfmaster.ui.screens.CompressPdfScreen
+import com.dsc.pdfmaster.ui.screens.ConvertPdfScreen
+import com.dsc.pdfmaster.ui.screens.CreatePdfScreen
 import com.dsc.pdfmaster.ui.screens.ExtractPdfScreen
 import com.dsc.pdfmaster.ui.screens.HomeScreen
 import com.dsc.pdfmaster.ui.screens.ImagesToPdfScreen
@@ -31,6 +33,7 @@ import com.dsc.pdfmaster.ui.screens.MergePdfScreen
 import com.dsc.pdfmaster.ui.screens.PasswordProtectScreen
 import com.dsc.pdfmaster.ui.screens.PdfViewerScreen
 import com.dsc.pdfmaster.ui.screens.RecentFilesScreen
+import com.dsc.pdfmaster.ui.screens.RemovePasswordScreen
 import com.dsc.pdfmaster.ui.screens.SettingsScreen
 import com.dsc.pdfmaster.ui.screens.SplitPdfScreen
 import com.dsc.pdfmaster.ui.theme.PdfMasterTheme
@@ -77,7 +80,7 @@ fun PdfMasterApp(
                 }
             },
             bottomBar = {
-                if (currentRoute in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.PDF_VIEWER, ScreenRoute.SETTINGS)) {
+                if (currentRoute in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
                     PdfBottomNavigationBar(
                         currentRoute = currentRoute,
                         onNavigate = { route -> viewModel.navigateTo(route) }
@@ -103,6 +106,18 @@ fun PdfMasterApp(
                             onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) }
                         )
                         ScreenRoute.PDF_VIEWER -> PdfViewerScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                        ScreenRoute.CREATE_PDF -> CreatePdfScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                        ScreenRoute.CONVERT_PDF -> ConvertPdfScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                        ScreenRoute.REMOVE_PASSWORD -> RemovePasswordScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )

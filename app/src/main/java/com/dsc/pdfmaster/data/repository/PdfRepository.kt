@@ -110,6 +110,10 @@ class PdfRepository(
         dao.deletePdfByPath(filePath)
     }
 
+    suspend fun removeFromRecent(filePath: String) = withContext(Dispatchers.IO) {
+        dao.deletePdfByPath(filePath)
+    }
+
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
         dao.clearAllRecentPdfs()
     }
@@ -159,6 +163,14 @@ class PdfRepository(
         outputFile
     }
 
+    suspend fun createTextPdf(textContent: String, outputName: String): File? = withContext(Dispatchers.IO) {
+        val outputFile = PdfEngine.createTextPdf(context, textContent, outputFileName = outputName)
+        if (outputFile != null) {
+            registerPdfFile(outputFile)
+        }
+        outputFile
+    }
+
     suspend fun organizePages(pdfFile: File, pages: List<PdfPageItem>, outputName: String): File? = withContext(Dispatchers.IO) {
         val outputFile = PdfEngine.organizePages(context, pdfFile, pages, outputName)
         if (outputFile != null) {
@@ -180,6 +192,14 @@ class PdfRepository(
             registerPdfFile(resultFile)
         }
         resultFile
+    }
+
+    suspend fun removePassword(pdfFile: File, password: String, outputName: String): File? = withContext(Dispatchers.IO) {
+        val outputFile = PdfEngine.removePassword(context, pdfFile, password, outputName)
+        if (outputFile != null) {
+            registerPdfFile(outputFile)
+        }
+        outputFile
     }
 
     suspend fun ensureStarterSamplePdf(): File = withContext(Dispatchers.IO) {

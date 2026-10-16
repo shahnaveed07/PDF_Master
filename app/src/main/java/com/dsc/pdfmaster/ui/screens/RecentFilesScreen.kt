@@ -59,6 +59,8 @@ fun RecentFilesScreen(
 
     var selectedTabIndex by remember { mutableStateOf(0) }
     var fileToRename by remember { mutableStateOf<RecentPdfEntity?>(null) }
+    var fileToDelete by remember { mutableStateOf<RecentPdfEntity?>(null) }
+    var fileInfoToShow by remember { mutableStateOf<RecentPdfEntity?>(null) }
     var renameInputText by remember { mutableStateOf("") }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
@@ -174,7 +176,9 @@ fun RecentFilesScreen(
                             fileToRename = pdf
                             renameInputText = pdf.fileName.removeSuffix(".pdf")
                         },
-                        onDelete = { viewModel.deletePdf(pdf.filePath) }
+                        onDelete = { fileToDelete = pdf },
+                        onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
+                        onFileInfo = { fileInfoToShow = pdf }
                     )
                 }
             }
@@ -216,6 +220,57 @@ fun RecentFilesScreen(
             dismissButton = {
                 TextButton(onClick = { fileToRename = null }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    fileToDelete?.let { pdfEntity ->
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Delete PDF File?", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to permanently delete '${pdfEntity.fileName}' from disk storage? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deletePdf(pdfEntity.filePath)
+                        fileToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.testTag("confirm_delete_button")
+                ) {
+                    Text("Delete Permanently")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { fileToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // File Info Dialog
+    fileInfoToShow?.let { pdfEntity ->
+        val formattedDate = remember(pdfEntity.lastAccessedTimestamp) {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(pdfEntity.lastAccessedTimestamp))
+        }
+        AlertDialog(
+            onDismissRequest = { fileInfoToShow = null },
+            title = { Text("File Information", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Name: ${pdfEntity.fileName}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("Size: ${com.dsc.pdfmaster.pdfengine.PdfEngine.formatFileSize(pdfEntity.fileSizeBytes)}", fontSize = 13.sp)
+                    Text("Pages: ${pdfEntity.pageCount}", fontSize = 13.sp)
+                    Text("Path: ${pdfEntity.filePath}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Last Opened: $formattedDate", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { fileInfoToShow = null }) {
+                    Text("Close")
                 }
             }
         )

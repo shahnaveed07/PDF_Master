@@ -275,6 +275,90 @@ object PdfEngine {
         }
     }
 
+    // Convert Raw Text to Multi-page PDF Document
+    suspend fun createTextPdf(
+        context: Context,
+        textContent: String,
+        fontSizeSp: Float = 14f,
+        marginDp: Int = 36,
+        outputFileName: String = "Text_Doc_${System.currentTimeMillis()}.pdf"
+    ): File? = withContext(Dispatchers.IO) {
+        if (textContent.isBlank()) return@withContext null
+        var outputFile: File? = null
+        try {
+            val pdfDocument = PdfDocument()
+            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
+
+            val paint = Paint().apply {
+                color = Color.BLACK
+                textSize = fontSizeSp * 1.5f
+                isAntiAlias = true
+            }
+
+            val margin = marginDp * 2
+            val usableWidth = A4_WIDTH - (margin * 2)
+            val usableHeight = A4_HEIGHT - (margin * 2)
+            val lineHeight = (fontSizeSp * 2.2f).toInt()
+
+            val lines = mutableListOf<String>()
+            val paragraphs = textContent.split("\n")
+            for (para in paragraphs) {
+                if (para.isBlank()) {
+                    lines.add("")
+                    continue
+                }
+                var currentLine = ""
+                for (word in para.split(" ")) {
+                    val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+                    if (paint.measureText(testLine) <= usableWidth) {
+                        currentLine = testLine
+                    } else {
+                        lines.add(currentLine)
+                        currentLine = word
+                    }
+                }
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine)
+                }
+            }
+
+            val linesPerPage = (usableHeight / lineHeight).coerceAtLeast(1)
+            var pageIndex = 1
+            var lineIdx = 0
+
+            while (lineIdx < lines.size) {
+                val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, pageIndex).create()
+                val page = pdfDocument.startPage(pageInfo)
+                val canvas = page.canvas
+                canvas.drawColor(Color.WHITE)
+
+                var yPos = margin + lineHeight.toFloat()
+                var linesWritten = 0
+                while (lineIdx < lines.size && linesWritten < linesPerPage) {
+                    canvas.drawText(lines[lineIdx], margin.toFloat(), yPos, paint)
+                    yPos += lineHeight
+                    linesWritten++
+                    lineIdx++
+                }
+
+                pdfDocument.finishPage(page)
+                pageIndex++
+            }
+
+            FileOutputStream(outputFile).use { fos ->
+                pdfDocument.writeTo(fos)
+            }
+            pdfDocument.close()
+
+            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            outputFile?.delete()
+            null
+        }
+    }
+
     // Merge Multiple PDFs into One using Structural PDFBox Import
     suspend fun mergePdfs(
         context: Context,
@@ -674,6 +758,36 @@ object PdfEngine {
         } catch (e: Exception) {
             e.printStackTrace()
             tempEncrypted.delete()
+            null
+        }
+    }
+
+    /**
+     * Remove Password Protection from PDF using PDFBox
+     */
+    suspend fun removePassword(
+        context: Context,
+        pdfFile: File,
+        currentPassword: String,
+        outputName: String = "Unprotected_${System.currentTimeMillis()}.pdf"
+    ): File? = withContext(Dispatchers.IO) {
+        if (!pdfFile.exists() || pdfFile.length() == 0L || currentPassword.isBlank()) return@withContext null
+        var outputFile: File? = null
+        try {
+            PDFBoxResourceLoader.init(context)
+            val doc = PDDocument.load(pdfFile, currentPassword)
+            doc.isAllSecurityToBeRemoved = true
+
+            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
+            outputFile = getUniqueOutputFile(outputDir, outputName)
+
+            doc.save(outputFile)
+            doc.close()
+
+            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            outputFile?.delete()
             null
         }
     }

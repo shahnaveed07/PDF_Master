@@ -26,6 +26,8 @@ enum class ScreenRoute {
     HOME,
     RECENT_FILES,
     PDF_VIEWER,
+    CREATE_PDF,
+    CONVERT_PDF,
     EXTRACT_PAGES,
     MERGE_PDF,
     SPLIT_PDF,
@@ -33,7 +35,14 @@ enum class ScreenRoute {
     IMAGES_TO_PDF,
     MANAGE_PAGES,
     PASSWORD_PROTECT,
+    REMOVE_PASSWORD,
     SETTINGS
+}
+
+enum class ThemeMode {
+    DARK,
+    LIGHT,
+    SYSTEM
 }
 
 data class ExtractionResultState(
@@ -60,8 +69,20 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _isDarkMode = MutableStateFlow(false)
+    private val _isDarkMode = MutableStateFlow(true)
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(ThemeMode.DARK)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        if (mode == ThemeMode.DARK) {
+            _isDarkMode.value = true
+        } else if (mode == ThemeMode.LIGHT) {
+            _isDarkMode.value = false
+        }
+    }
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
@@ -218,6 +239,16 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun removePdfFromRecent(filePath: String) {
+        viewModelScope.launch {
+            repository.removeFromRecent(filePath)
+            _userNotification.value = "Removed from Recent Documents"
+            if (_selectedPdfFile.value?.absolutePath == filePath) {
+                _selectedPdfFile.value = null
+            }
+        }
+    }
+
     fun renamePdf(file: File, newName: String) {
         viewModelScope.launch {
             val renamed = repository.renamePdf(file, newName)
@@ -294,6 +325,28 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Images to PDF
+    fun executeCreateTextPdf(textContent: String, outputName: String) {
+        if (textContent.isBlank()) return
+        viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Generating Text PDF..."
+            try {
+                val result = repository.createTextPdf(textContent, outputName)
+                if (result != null) {
+                    _selectedPdfFile.value = result
+                    _userNotification.value = "Text PDF created: ${result.name}"
+                    navigateTo(ScreenRoute.PDF_VIEWER)
+                } else {
+                    _userNotification.value = "Failed to create Text PDF"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     fun addImagesForPdf(uris: List<Uri>) {
         _selectedImageUris.value = (_selectedImageUris.value + uris).distinct()
     }
@@ -474,6 +527,28 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                     navigateTo(ScreenRoute.PDF_VIEWER)
                 } else {
                     _userNotification.value = "Failed to encrypt PDF."
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun executeRemovePassword(file: File, password: String, outputName: String) {
+        if (password.isBlank()) return
+        viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Removing PDF password..."
+            try {
+                val result = repository.removePassword(file, password, outputName)
+                if (result != null) {
+                    _selectedPdfFile.value = result
+                    _userNotification.value = "Password removed: ${result.name}"
+                    navigateTo(ScreenRoute.PDF_VIEWER)
+                } else {
+                    _userNotification.value = "Failed to remove password. Check current password."
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

@@ -7,41 +7,41 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = DscPrimaryCyan,
-    onPrimary = DscPureBlack,
-    primaryContainer = DscCyanContainer,
-    onPrimaryContainer = DscOnCyanContainer,
-    secondary = DscSecondaryPurple,
-    onSecondary = DscWhite,
-    secondaryContainer = DscPurpleContainer,
-    onSecondaryContainer = DscOnPurpleContainer,
-    background = DscPureBlack,
-    onBackground = DscTextPrimary,
-    surface = DscSurfacePrimary,
-    onSurface = DscTextPrimary,
-    surfaceVariant = DscSurfaceSecondary,
-    onSurfaceVariant = DscTextSecondary,
-    outline = DscDivider,
-    outlineVariant = DscDivider
+    primary = MonoDarkPrimary,
+    onPrimary = MonoDarkOnPrimary,
+    primaryContainer = MonoDarkPrimaryContainer,
+    onPrimaryContainer = MonoDarkOnPrimaryContainer,
+    secondary = Color(0xFF808080),
+    onSecondary = MonoDarkOnPrimary,
+    secondaryContainer = MonoDarkSurfaceElevated,
+    onSecondaryContainer = MonoDarkTextPrimary,
+    background = MonoDarkBackground,
+    onBackground = MonoDarkTextPrimary,
+    surface = MonoDarkSurface,
+    onSurface = MonoDarkTextPrimary,
+    surfaceVariant = MonoDarkSurfaceVariant,
+    onSurfaceVariant = MonoDarkTextSecondary,
+    outline = MonoDarkOutline,
+    outlineVariant = MonoDarkOutline
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = DscPrimaryCyanLight,
-    onPrimary = DscOnPrimaryLight,
-    primaryContainer = Color(0xFFE0F7FA),
-    onPrimaryContainer = Color(0xFF00363D),
-    secondary = DscSecondaryPurpleLight,
-    onSecondary = DscWhite,
-    secondaryContainer = Color(0xFFEDE9FE),
-    onSecondaryContainer = Color(0xFF2E1065),
-    background = DscBackgroundLight,
-    onBackground = DscTextPrimaryLight,
-    surface = DscSurfaceLight,
-    onSurface = DscTextPrimaryLight,
-    surfaceVariant = DscSurfaceVariantLight,
-    onSurfaceVariant = DscTextSecondaryLight,
-    outline = DscDividerLight,
-    outlineVariant = DscDividerLight
+    primary = MonoLightPrimary,
+    onPrimary = MonoLightOnPrimary,
+    primaryContainer = MonoLightPrimaryContainer,
+    onPrimaryContainer = MonoLightOnPrimaryContainer,
+    secondary = Color(0xFF666666),
+    onSecondary = MonoLightOnPrimary,
+    secondaryContainer = MonoLightSurfaceElevated,
+    onSecondaryContainer = MonoLightTextPrimary,
+    background = MonoLightBackground,
+    onBackground = MonoLightTextPrimary,
+    surface = MonoLightSurface,
+    onSurface = MonoLightTextPrimary,
+    surfaceVariant = MonoLightSurfaceVariant,
+    onSurfaceVariant = MonoLightTextSecondary,
+    outline = MonoLightOutline,
+    outlineVariant = MonoLightOutline
 )
 
 @Composable
@@ -50,7 +50,6 @@ fun PdfMasterTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    // Dynamic color is explicitly not used to strictly protect DarkSkullCorporation visual identity
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
@@ -59,5 +58,3 @@ fun PdfMasterTheme(
         content = content
     )
 }
-
-

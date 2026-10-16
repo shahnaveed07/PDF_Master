@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,45 +19,36 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dsc.pdfmaster.data.database.RecentPdfEntity
-import com.dsc.pdfmaster.data.model.PdfTool
-import com.dsc.pdfmaster.data.model.pdfToolsList
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.ScreenRoute
 import com.dsc.pdfmaster.ui.components.PdfFileCard
-import com.dsc.pdfmaster.ui.components.ToolCard
 import java.io.File
-import java.io.FileOutputStream
 
 @Composable
 fun HomeScreen(
@@ -68,7 +60,6 @@ fun HomeScreen(
     val recentList by viewModel.recentPdfs.collectAsState()
     val favoriteList by viewModel.favoritePdfs.collectAsState()
 
-    // File picker launcher for opening arbitrary PDF files
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -81,194 +72,90 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
     ) {
-        // Hero Studio Banner
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("hero_banner_card"),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    MaterialTheme.colorScheme.secondary
-                                )
-                            )
-                        )
-                        .padding(20.dp)
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "PDF MASTER",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    letterSpacing = 1.2.sp
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Powerful PDF tools. Simple. Private.",
-                                    fontSize = 19.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = "Merge, split, compress, or convert documents with on-device processing.",
-                            fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Button(
-                                onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color.White,
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.testTag("open_file_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FolderOpen,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Open PDF",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-
-                            Button(
-                                onClick = { viewModel.navigateTo(ScreenRoute.RECENT_FILES) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color.White.copy(alpha = 0.2f),
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.testTag("view_recent_button")
-                            ) {
-                                Text(
-                                    text = "My Documents (${recentList.size})",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        // Popular Core Tools Grid
+        // Quick Action Grid Title
         item {
             Text(
-                text = "FEATURED UTILITIES",
-                fontSize = 12.sp,
+                text = "QUICK ACTIONS",
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.2.sp
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        val featuredTools = pdfToolsList.filter { it.isPopular }
+        // Quick Action Grid (2x2)
         item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (featuredTools.size >= 1) {
-                        ToolCard(
-                            tool = featuredTools[0],
-                            onClick = { viewModel.launchTool(featuredTools[0]) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (featuredTools.size >= 2) {
-                        ToolCard(
-                            tool = featuredTools[1],
-                            onClick = { viewModel.launchTool(featuredTools[1]) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    QuickActionCard(
+                        title = "Open PDF",
+                        subtitle = "Select file",
+                        icon = Icons.Default.FolderOpen,
+                        onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                        tag = "action_open_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionCard(
+                        title = "Create PDF",
+                        subtitle = "Text / Images",
+                        icon = Icons.Default.AddCircleOutline,
+                        onClick = { viewModel.navigateTo(ScreenRoute.CREATE_PDF) },
+                        tag = "action_create_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (featuredTools.size >= 3) {
-                        ToolCard(
-                            tool = featuredTools[2],
-                            onClick = { viewModel.launchTool(featuredTools[2]) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (featuredTools.size >= 4) {
-                        ToolCard(
-                            tool = featuredTools[3],
-                            onClick = { viewModel.launchTool(featuredTools[3]) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    QuickActionCard(
+                        title = "Convert",
+                        subtitle = "Local export",
+                        icon = Icons.Default.Transform,
+                        onClick = { viewModel.navigateTo(ScreenRoute.CONVERT_PDF) },
+                        tag = "action_convert_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionCard(
+                        title = "Compress",
+                        subtitle = "Reduce size",
+                        icon = Icons.Default.Compress,
+                        onClick = { viewModel.navigateTo(ScreenRoute.COMPRESS_PDF) },
+                        tag = "action_compress_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Favorite Documents Carousel (if any)
+        // Favorites Carousel (Displayed only when non-empty)
         if (favoriteList.isNotEmpty()) {
             item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
-                        tint = Color(0xFFFFB300),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "STARRED DOCUMENTS",
-                        fontSize = 12.sp,
+                        text = "FAVORITES",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        letterSpacing = 1.sp
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 1.2.sp
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -291,53 +178,52 @@ fun HomeScreen(
             }
         }
 
-        // All Tools List
+        // Latest 3 Recent Documents
         item {
-            Text(
-                text = "ALL PDF TOOLS",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "RECENT DOCUMENTS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.2.sp
+                )
+                TextButton(
+                    onClick = { viewModel.navigateTo(ScreenRoute.RECENT_FILES) },
+                    modifier = Modifier.testTag("see_all_recent_button")
+                ) {
+                    Text("See All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        val otherTools = pdfToolsList.filter { !it.isPopular }
-        items(otherTools) { tool ->
-            ToolCard(
-                tool = tool,
-                onClick = { viewModel.launchTool(tool) },
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-        }
-
-        // Recent Files Preview Header
-        if (recentList.isNotEmpty()) {
+        if (recentList.isEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Text(
-                        text = "RECENT DOCUMENTS",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        letterSpacing = 1.sp
-                    )
-                    Button(
-                        onClick = { viewModel.navigateTo(ScreenRoute.RECENT_FILES) },
-                        colors = ButtonDefaults.textButtonColors()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text("See All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "No recent PDFs. Open or create a PDF to get started.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
             }
-
+        } else {
             items(recentList.take(3)) { pdf ->
                 PdfFileCard(
                     pdf = pdf,
@@ -349,6 +235,62 @@ fun HomeScreen(
                     modifier = Modifier.padding(bottom = 10.dp)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    tag: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .testTag(tag),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

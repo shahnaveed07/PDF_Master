@@ -3,6 +3,7 @@ package com.dsc.pdfmaster.ui.screens
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -191,31 +193,67 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Dark Mode Switch Card
+            // Theme Mode Selector Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DarkMode,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Dark Theme", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text("Eye-friendly dark visual theme", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.DarkMode,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Visual Theme", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
-                    Switch(
-                        checked = isDarkMode,
-                        onCheckedChange = { viewModel.toggleDarkMode(it) },
-                        modifier = Modifier.testTag("settings_dark_mode_switch")
-                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val themeMode by viewModel.themeMode.collectAsState()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setThemeMode(com.dsc.pdfmaster.ui.ThemeMode.DARK) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = themeMode == com.dsc.pdfmaster.ui.ThemeMode.DARK,
+                            onClick = { viewModel.setThemeMode(com.dsc.pdfmaster.ui.ThemeMode.DARK) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Dark Theme", fontSize = 14.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setThemeMode(com.dsc.pdfmaster.ui.ThemeMode.LIGHT) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = themeMode == com.dsc.pdfmaster.ui.ThemeMode.LIGHT,
+                            onClick = { viewModel.setThemeMode(com.dsc.pdfmaster.ui.ThemeMode.LIGHT) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Light Theme", fontSize = 14.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setThemeMode(com.dsc.pdfmaster.ui.ThemeMode.SYSTEM) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = themeMode == com.dsc.pdfmaster.ui.ThemeMode.SYSTEM,
+                            onClick = { viewModel.setThemeMode(com.dsc.pdfmaster.ui.ThemeMode.SYSTEM) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("System Default", fontSize = 14.sp)
+                    }
                 }
             }
 
