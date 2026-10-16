@@ -195,11 +195,35 @@ class PdfRepository(
     }
 
     suspend fun removePassword(pdfFile: File, password: String, outputName: String): File? = withContext(Dispatchers.IO) {
-        val outputFile = PdfEngine.removePassword(context, pdfFile, password, outputName)
+        val isManagedFile = pdfFile.absolutePath.startsWith(context.filesDir.absolutePath)
+        val defaultName = if (outputName.isNotBlank()) outputName else "${pdfFile.nameWithoutExtension}_unprotected.pdf"
+        val resultFile = PdfEngine.removePassword(
+            context = context,
+            pdfFile = pdfFile,
+            currentPassword = password,
+            outputName = defaultName,
+            inPlace = isManagedFile
+        )
+        if (resultFile != null) {
+            registerPdfFile(resultFile)
+        }
+        resultFile
+    }
+
+    suspend fun convertPdfToImages(pdfFile: File, password: String? = null): List<File> = withContext(Dispatchers.IO) {
+        PdfEngine.convertPdfToImages(context, pdfFile, password = password)
+    }
+
+    suspend fun extractTextFromPdf(pdfFile: File, password: String? = null): File? = withContext(Dispatchers.IO) {
+        val outputFile = PdfEngine.extractTextFromPdf(context, pdfFile, password = password)
         if (outputFile != null) {
             registerPdfFile(outputFile)
         }
         outputFile
+    }
+
+    suspend fun convertImageFormat(imageUri: Uri, targetFormat: android.graphics.Bitmap.CompressFormat, outputName: String): File? = withContext(Dispatchers.IO) {
+        PdfEngine.convertImageFormat(context, imageUri, targetFormat, outputName)
     }
 
     suspend fun ensureStarterSamplePdf(): File = withContext(Dispatchers.IO) {

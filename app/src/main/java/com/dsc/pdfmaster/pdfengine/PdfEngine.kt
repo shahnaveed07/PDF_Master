@@ -15,6 +15,8 @@ import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
@@ -127,14 +129,8 @@ object PdfEngine {
                     }
                 }
             }
-        } catch (e: SecurityException) {
-            if (!password.isNullOrEmpty()) {
-                return@withContext renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, targetWidth, password)
-            }
-            null
         } catch (e: Exception) {
-            e.printStackTrace()
-            null
+            renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, targetWidth, password ?: "")
         }
     }
 
@@ -275,7 +271,7 @@ object PdfEngine {
         }
     }
 
-    // Convert Raw Text to Multi-page PDF Document
+    // Convert Raw Text to Multi-page PDF Document using PDFBox
     suspend fun createTextPdf(
         context: Context,
         textContent: String,
@@ -286,24 +282,19 @@ object PdfEngine {
         if (textContent.isBlank()) return@withContext null
         var outputFile: File? = null
         try {
-            val pdfDocument = PdfDocument()
-            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            outputFile = getUniqueOutputFile(outputDir, outputFileName)
+            PDFBoxResourceLoader.init(context)
+            val doc = PDDocument()
+            val font = com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA
+            val fontSize = fontSizeSp
+            val leading = 1.5f * fontSize
 
-            val paint = Paint().apply {
-                color = Color.BLACK
-                textSize = fontSizeSp * 1.5f
-                isAntiAlias = true
-            }
-
-            val margin = marginDp * 2
-            val usableWidth = A4_WIDTH - (margin * 2)
-            val usableHeight = A4_HEIGHT - (margin * 2)
-            val lineHeight = (fontSizeSp * 2.2f).toInt()
+            val margin = marginDp.toFloat()
+            val width = com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4.width
+            val height = com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4.height
+            val usableWidth = width - 2 * margin
 
             val lines = mutableListOf<String>()
-            val paragraphs = textContent.split("\n")
-            for (para in paragraphs) {
+            for (para in textContent.split("\n")) {
                 if (para.isBlank()) {
                     lines.add("")
                     continue
@@ -311,7 +302,8 @@ object PdfEngine {
                 var currentLine = ""
                 for (word in para.split(" ")) {
                     val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
-                    if (paint.measureText(testLine) <= usableWidth) {
+                    val textWidth = font.getStringWidth(testLine) / 1000 * fontSize
+                    if (textWidth <= usableWidth) {
                         currentLine = testLine
                     } else {
                         lines.add(currentLine)
@@ -323,33 +315,47 @@ object PdfEngine {
                 }
             }
 
-            val linesPerPage = (usableHeight / lineHeight).coerceAtLeast(1)
-            var pageIndex = 1
-            var lineIdx = 0
+            var page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+            doc.addPage(page)
+            var contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page)
+            contentStream.beginText()
+            contentStream.setFont(font, fontSize)
+            contentStream.newLineAtOffset(margin, height - margin - fontSize)
 
-            while (lineIdx < lines.size) {
-                val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, pageIndex).create()
-                val page = pdfDocument.startPage(pageInfo)
-                val canvas = page.canvas
-                canvas.drawColor(Color.WHITE)
+            var currentHeight = margin + fontSize
 
-                var yPos = margin + lineHeight.toFloat()
-                var linesWritten = 0
-                while (lineIdx < lines.size && linesWritten < linesPerPage) {
-                    canvas.drawText(lines[lineIdx], margin.toFloat(), yPos, paint)
-                    yPos += lineHeight
-                    linesWritten++
-                    lineIdx++
+            for (line in lines) {
+                if (currentHeight + leading > height - margin) {
+                    contentStream.endText()
+                    contentStream.close()
+
+                    page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+                    doc.addPage(page)
+                    contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page)
+                    contentStream.beginText()
+                    contentStream.setFont(font, fontSize)
+                    contentStream.newLineAtOffset(margin, height - margin - fontSize)
+                    currentHeight = margin + fontSize
                 }
 
-                pdfDocument.finishPage(page)
-                pageIndex++
+                val safeLine = line.replace("\r", "").replace("\t", "    ")
+                try {
+                    contentStream.showText(safeLine)
+                } catch (e: Exception) {
+                    contentStream.showText(safeLine.filter { it.code in 32..126 })
+                }
+                contentStream.newLineAtOffset(0f, -leading)
+                currentHeight += leading
             }
 
-            FileOutputStream(outputFile).use { fos ->
-                pdfDocument.writeTo(fos)
-            }
-            pdfDocument.close()
+            contentStream.endText()
+            contentStream.close()
+
+            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
+            outputFile = getUniqueOutputFile(outputDir, outputFileName)
+
+            doc.save(outputFile)
+            doc.close()
 
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {
@@ -763,26 +769,185 @@ object PdfEngine {
     }
 
     /**
-     * Remove Password Protection from PDF using PDFBox
+     * Remove Password Protection from PDF using PDFBox with Strict Output Validation
      */
     suspend fun removePassword(
         context: Context,
         pdfFile: File,
         currentPassword: String,
-        outputName: String = "Unprotected_${System.currentTimeMillis()}.pdf"
+        outputName: String = "Unprotected_${System.currentTimeMillis()}.pdf",
+        inPlace: Boolean = false
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L || currentPassword.isBlank()) return@withContext null
+        val tempUnprotected = File(context.cacheDir, "temp_unprotect_${System.currentTimeMillis()}.pdf")
+        try {
+            PDFBoxResourceLoader.init(context)
+            val doc = try {
+                PDDocument.load(pdfFile, currentPassword)
+            } catch (e: InvalidPasswordException) {
+                return@withContext null
+            }
+            doc.isAllSecurityToBeRemoved = true
+
+            doc.save(tempUnprotected)
+            doc.close()
+
+            // Strict Validation: Output must exist, be unencrypted, and be loadable without password
+            val isStillEncrypted = checkPasswordProtected(context, tempUnprotected)
+            if (isStillEncrypted || !tempUnprotected.exists() || tempUnprotected.length() == 0L) {
+                tempUnprotected.delete()
+                return@withContext null
+            }
+
+            var isValidDocument = false
+            try {
+                val testDoc = PDDocument.load(tempUnprotected)
+                isValidDocument = testDoc.numberOfPages > 0 && !testDoc.isEncrypted
+                testDoc.close()
+            } catch (e: Exception) {
+                isValidDocument = false
+            }
+
+            if (!isValidDocument) {
+                tempUnprotected.delete()
+                return@withContext null
+            }
+
+            if (inPlace && pdfFile.canWrite()) {
+                FileOutputStream(pdfFile).use { fos ->
+                    tempUnprotected.inputStream().use { fis ->
+                        fis.copyTo(fos)
+                    }
+                }
+                tempUnprotected.delete()
+                return@withContext pdfFile
+            } else {
+                val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
+                val outputFile = getUniqueOutputFile(outputDir, outputName)
+                if (tempUnprotected.renameTo(outputFile)) {
+                    return@withContext outputFile
+                } else {
+                    FileOutputStream(outputFile).use { fos ->
+                        tempUnprotected.inputStream().use { fis ->
+                            fis.copyTo(fos)
+                        }
+                    }
+                    tempUnprotected.delete()
+                    return@withContext outputFile
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            tempUnprotected.delete()
+            null
+        }
+    }
+
+    // Convert PDF Pages to PNG/JPEG Images using PDFBox
+    suspend fun convertPdfToImages(
+        context: Context,
+        pdfFile: File,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+        password: String? = null,
+        outputPrefix: String = pdfFile.nameWithoutExtension
+    ): List<File> = withContext(Dispatchers.IO) {
+        if (!pdfFile.exists() || pdfFile.length() == 0L) return@withContext emptyList()
+        val generatedImages = mutableListOf<File>()
+        try {
+            PDFBoxResourceLoader.init(context)
+            val doc = if (!password.isNullOrBlank()) PDDocument.load(pdfFile, password) else PDDocument.load(pdfFile)
+            val pageCount = doc.numberOfPages
+            if (pageCount == 0) {
+                doc.close()
+                return@withContext emptyList()
+            }
+
+            val pdfBoxRenderer = com.tom_roush.pdfbox.rendering.PDFRenderer(doc)
+            val outputDir = File(context.filesDir, "output_images").apply { mkdirs() }
+            val ext = if (format == Bitmap.CompressFormat.PNG) "png" else "jpg"
+
+            for (i in 0 until pageCount) {
+                val bitmap = try {
+                    pdfBoxRenderer.renderImage(i, 1.5f)
+                } catch (e: Exception) {
+                    null
+                } ?: continue
+
+                val imgFile = File(outputDir, "${outputPrefix}_page_${i + 1}.$ext")
+                FileOutputStream(imgFile).use { fos ->
+                    bitmap.compress(format, 90, fos)
+                }
+                bitmap.recycle()
+                if (imgFile.exists() && imgFile.length() > 0) {
+                    generatedImages.add(imgFile)
+                }
+            }
+            doc.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        generatedImages
+    }
+
+    // Extract Plain Text from PDF using PDFBox
+    suspend fun extractTextFromPdf(
+        context: Context,
+        pdfFile: File,
+        password: String? = null,
+        outputName: String = "${pdfFile.nameWithoutExtension}_text.txt"
+    ): File? = withContext(Dispatchers.IO) {
+        if (!pdfFile.exists() || pdfFile.length() == 0L) return@withContext null
         var outputFile: File? = null
         try {
             PDFBoxResourceLoader.init(context)
-            val doc = PDDocument.load(pdfFile, currentPassword)
-            doc.isAllSecurityToBeRemoved = true
+            val doc = if (!password.isNullOrBlank()) {
+                PDDocument.load(pdfFile, password)
+            } else {
+                PDDocument.load(pdfFile)
+            }
 
-            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            outputFile = getUniqueOutputFile(outputDir, outputName)
-
-            doc.save(outputFile)
+            val stripper = com.tom_roush.pdfbox.text.PDFTextStripper()
+            val textContent = stripper.getText(doc)
             doc.close()
+
+            if (textContent.isBlank()) return@withContext null
+
+            val outputDir = File(context.filesDir, "output_texts").apply { mkdirs() }
+            val cleanName = if (outputName.endsWith(".txt", ignoreCase = true)) outputName else "$outputName.txt"
+            outputFile = File(outputDir, cleanName)
+
+            FileOutputStream(outputFile).use { fos ->
+                fos.write(textContent.toByteArray(Charsets.UTF_8))
+            }
+
+            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            outputFile?.delete()
+            null
+        }
+    }
+
+    // Image Format Converter (PNG <-> JPG)
+    suspend fun convertImageFormat(
+        context: Context,
+        imageUri: Uri,
+        targetFormat: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
+        outputName: String = "image_converted.${if (targetFormat == Bitmap.CompressFormat.PNG) "png" else "jpg"}"
+    ): File? = withContext(Dispatchers.IO) {
+        var outputFile: File? = null
+        try {
+            val bitmap = context.contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                BitmapFactory.decodeStream(inputStream)
+            } ?: return@withContext null
+
+            val outputDir = File(context.filesDir, "output_images").apply { mkdirs() }
+            outputFile = File(outputDir, outputName)
+
+            FileOutputStream(outputFile).use { fos ->
+                bitmap.compress(targetFormat, 90, fos)
+            }
+            bitmap.recycle()
 
             if (outputFile.exists() && outputFile.length() > 0) outputFile else null
         } catch (e: Exception) {

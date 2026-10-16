@@ -58,7 +58,9 @@ fun RemovePasswordScreen(
 
     var passwordInput by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
-    var outputNameInput by remember { mutableStateOf("Unprotected_${System.currentTimeMillis() / 1000}.pdf") }
+    var outputNameInput by remember(currentPdf) {
+        mutableStateOf("${currentPdf?.nameWithoutExtension ?: "Document"}_unprotected.pdf")
+    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()

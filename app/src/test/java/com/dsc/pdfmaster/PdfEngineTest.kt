@@ -208,4 +208,80 @@ class PdfEngineTest {
             compressed.delete()
         }
     }
+
+    @Test
+    fun testRemovePasswordSuccess() {
+        runBlocking {
+            val source = createTestPdf(File(context.cacheDir, "unprotect_src.pdf"), 2)
+            val pass = "PasswordToClear789"
+            val protectedFile = PdfEngine.protectPdf(context, source, pass, pass, "to_clear.pdf")
+
+            assertNotNull(protectedFile)
+            assertTrue(PdfEngine.checkPasswordProtected(context, protectedFile!!))
+
+            val unlockedFile = PdfEngine.removePassword(context, protectedFile, pass, "unprotected_out.pdf")
+
+            assertNotNull(unlockedFile)
+            assertTrue(unlockedFile!!.exists())
+            assertFalse(PdfEngine.checkPasswordProtected(context, unlockedFile))
+
+            source.delete()
+            protectedFile.delete()
+            unlockedFile.delete()
+        }
+    }
+
+    @Test
+    fun testRemovePasswordWrongPassword() {
+        runBlocking {
+            val source = createTestPdf(File(context.cacheDir, "unprotect_wrong.pdf"), 2)
+            val pass = "RealPass123"
+            val protectedFile = PdfEngine.protectPdf(context, source, pass, pass, "to_clear_wrong.pdf")
+
+            assertNotNull(protectedFile)
+
+            val result = PdfEngine.removePassword(context, protectedFile!!, "WrongPass456", "should_fail.pdf")
+
+            assertTrue(result == null)
+            assertTrue(protectedFile.exists())
+            assertTrue(PdfEngine.checkPasswordProtected(context, protectedFile))
+
+            source.delete()
+            protectedFile.delete()
+        }
+    }
+
+    @Test
+    fun testConvertPdfToImages() {
+        runBlocking {
+            val source = createTestPdf(File(context.cacheDir, "pages_to_images.pdf"), 2)
+
+            val images = PdfEngine.convertPdfToImages(context, source, outputPrefix = "test_img")
+
+            assertEquals(2, images.size)
+            assertTrue(images.all { it.exists() && it.length() > 0 })
+
+            source.delete()
+            images.forEach { it.delete() }
+        }
+    }
+
+    @Test
+    fun testCreateTextPdf() {
+        runBlocking {
+            val textContent = "Hello PDF Master!\nLine 2 of sample document.\nLine 3 of text."
+            val pdfFile = PdfEngine.createTextPdf(context, textContent, outputFileName = "sample_text.pdf")
+
+            assertNotNull(pdfFile)
+            assertTrue(pdfFile!!.exists())
+
+            val extractedText = PdfEngine.extractTextFromPdf(context, pdfFile)
+            assertNotNull(extractedText)
+            assertTrue(extractedText!!.exists())
+            assertTrue(extractedText.readText().contains("Hello PDF Master!"))
+
+            pdfFile.delete()
+            extractedText.delete()
+        }
+    }
 }

@@ -1,5 +1,7 @@
 package com.dsc.pdfmaster.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +20,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +34,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -47,6 +53,24 @@ fun ConvertPdfScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentPdf by viewModel.selectedPdfFile.collectAsState()
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            viewModel.importAndSelectPdf(it, openViewer = false)
+        }
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            viewModel.executeConvertImageFormat(it, isToJpeg = true)
+        }
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("Document Converter", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
@@ -66,7 +90,7 @@ fun ConvertPdfScreen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Category: PDF
+            // Category: PDF Conversions
             Text(
                 text = "PDF CONVERSIONS",
                 fontSize = 11.sp,
@@ -78,7 +102,7 @@ fun ConvertPdfScreen(
 
             ConversionCard(
                 title = "Images to PDF",
-                subtitle = "Combine JPG/PNG photos into a clean PDF",
+                subtitle = "Combine JPG/PNG photos into a clean PDF document",
                 icon = Icons.Default.Image,
                 isEnabled = true,
                 onClick = { viewModel.navigateTo(ScreenRoute.IMAGES_TO_PDF) },
@@ -89,18 +113,35 @@ fun ConvertPdfScreen(
 
             ConversionCard(
                 title = "Text File to PDF",
-                subtitle = "Generate formatted PDF from plain text",
+                subtitle = "Generate formatted PDF document from plain text",
                 icon = Icons.Default.Description,
                 isEnabled = true,
                 onClick = { viewModel.navigateTo(ScreenRoute.CREATE_PDF) },
                 tag = "convert_text_to_pdf"
             )
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            ConversionCard(
+                title = "Extract PDF Text (PDF to TXT)",
+                subtitle = "Extract plain text from selected PDF document",
+                icon = Icons.Default.Description,
+                isEnabled = true,
+                onClick = {
+                    if (currentPdf != null) {
+                        viewModel.executePdfToText(currentPdf!!)
+                    } else {
+                        pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                    }
+                },
+                tag = "convert_pdf_to_text"
+            )
+
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Category: Images
+            // Category: Image Conversions
             Text(
-                text = "IMAGE EXPORTS",
+                text = "IMAGE CONVERSIONS",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -109,19 +150,30 @@ fun ConvertPdfScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             ConversionCard(
-                title = "Extract PDF Pages to Images",
-                subtitle = "Save PDF pages as PNG image files",
+                title = "Extract PDF Pages to PNG Images",
+                subtitle = "Save all PDF pages as PNG image files",
                 icon = Icons.Default.PictureAsPdf,
                 isEnabled = true,
                 onClick = { viewModel.navigateTo(ScreenRoute.EXTRACT_PAGES) },
                 tag = "convert_pdf_to_images"
             )
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            ConversionCard(
+                title = "Image Format Converter (PNG to JPG)",
+                subtitle = "Convert PNG photos to compressed JPG images locally",
+                icon = Icons.Default.Transform,
+                isEnabled = true,
+                onClick = { imagePickerLauncher.launch("image/*") },
+                tag = "convert_image_format"
+            )
+
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Category: Office
+            // Category: Office Formats
             Text(
-                text = "OFFICE FORMATS (CLOUD REQUIRED)",
+                text = "OFFICE FORMATS (REQUIRES SERVER / CLOUD)",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -147,6 +199,17 @@ fun ConvertPdfScreen(
                 isEnabled = false,
                 onClick = {},
                 tag = "convert_excel_to_pdf"
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            ConversionCard(
+                title = "PowerPoint (PPTX) to PDF",
+                subtitle = "Requires presentation slide parser",
+                icon = Icons.Default.Slideshow,
+                isEnabled = false,
+                onClick = {},
+                tag = "convert_pptx_to_pdf"
             )
 
             Spacer(modifier = Modifier.height(24.dp))

@@ -558,6 +558,67 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun executePdfToImages(file: File, password: String? = null) {
+        viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Converting PDF pages to PNG images..."
+            try {
+                val images = repository.convertPdfToImages(file, password)
+                if (images.isNotEmpty()) {
+                    _userNotification.value = "Exported ${images.size} PNG images to Output folder"
+                } else {
+                    _userNotification.value = "Failed to convert PDF pages to images"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun executePdfToText(file: File, password: String? = null) {
+        viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Extracting text content from PDF..."
+            try {
+                val textFile = repository.extractTextFromPdf(file, password)
+                if (textFile != null) {
+                    _selectedPdfFile.value = textFile
+                    _userNotification.value = "Text extracted to ${textFile.name}"
+                } else {
+                    _userNotification.value = "No text could be extracted from PDF"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun executeConvertImageFormat(uri: Uri, isToJpeg: Boolean) {
+        viewModelScope.launch {
+            _isProcessing.value = true
+            val targetFormat = if (isToJpeg) android.graphics.Bitmap.CompressFormat.JPEG else android.graphics.Bitmap.CompressFormat.PNG
+            val ext = if (isToJpeg) "jpg" else "png"
+            val outputName = "Converted_Image_${System.currentTimeMillis() / 1000}.$ext"
+            _processingMessage.value = "Converting image format to ${ext.uppercase()}..."
+            try {
+                val imgFile = repository.convertImageFormat(uri, targetFormat, outputName)
+                if (imgFile != null) {
+                    _userNotification.value = "Image converted to ${imgFile.name}"
+                } else {
+                    _userNotification.value = "Failed to convert image format"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     fun resetExtractionResult() {
         _extractionResult.value = null
     }
