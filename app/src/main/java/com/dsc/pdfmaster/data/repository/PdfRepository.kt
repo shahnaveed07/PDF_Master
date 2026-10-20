@@ -1,7 +1,9 @@
 package com.dsc.pdfmaster.data.repository
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.dsc.pdfmaster.data.database.RecentPdfDao
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
@@ -11,6 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.security.MessageDigest
 
 class PdfRepository(
     private val context: Context,
@@ -19,54 +24,133 @@ class PdfRepository(
     val allRecentPdfs: Flow<List<RecentPdfEntity>> = dao.getAllRecentPdfs()
     val favoritePdfs: Flow<List<RecentPdfEntity>> = dao.getFavoritePdfs()
 
+    private fun computeSha256(file: File): String? {
+        if (!file.exists() || !file.isFile) return null
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(8192)
+            FileInputStream(file).use { fis ->
+                while (true) {
+                    val read = fis.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Content-aware import of a PDF URI into managed storage.
+     * - Validates that the imported content has a valid PDF header.
+     * - If an existing imported file has the same display name AND identical SHA-256 content,
+     *   it reuses that file.
+     * - If two different PDFs share the same filename, it creates a distinct non-colliding file
+     *   (e.g., `report (1).pdf`) instead of silently returning the previous unrelated document.
+     */
     suspend fun getOrCreateManagedFileFromUri(uri: Uri): File? = withContext(Dispatchers.IO) {
         val scheme = uri.scheme
         if (scheme == "file") {
-            return@withContext uri.path?.let { File(it) }
+            val file = uri.path?.let { File(it) } ?: return@withContext null
+            return@withContext if (file.exists() && file.isFile && file.length() > 0 && PdfEngine.hasPdfHeader(file)) {
+                file
+            } else {
+                null
+            }
         }
         if (scheme == "content") {
+            var tempImport: File? = null
             try {
                 var fileName: String? = null
-                val cursor = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                val cursor = context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )
                 cursor?.use {
                     if (it.moveToFirst()) {
-                        val index = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                         if (index != -1) {
                             fileName = it.getString(index)
                         }
                     }
                 }
                 val sanitizedName = if (!fileName.isNullOrBlank()) {
-                    val name = fileName!!
-                    if (name.endsWith(".pdf", ignoreCase = true)) name else "$name.pdf"
+                    val clean = fileName!!.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                    if (clean.endsWith(".pdf", ignoreCase = true)) clean else "$clean.pdf"
                 } else {
                     "Document_${uri.lastPathSegment?.replace(Regex("[^a-zA-Z0-9_]"), "") ?: "imported"}.pdf"
                 }
 
-                val importsDir = File(context.filesDir, "imported_pdfs").apply { mkdirs() }
-                val targetFile = File(importsDir, sanitizedName)
-
-                // Reuse if already imported and valid to avoid duplicate files
-                if (targetFile.exists() && targetFile.length() > 0) {
-                    return@withContext targetFile
-                }
-
+                // Stream incoming content to a staging file and compute SHA-256 simultaneously
+                tempImport = File(context.cacheDir, "temp_import_${System.nanoTime()}.pdf")
+                val digest = MessageDigest.getInstance("SHA-256")
                 val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
-                java.io.FileOutputStream(targetFile).use { fos ->
-                    inputStream.copyTo(fos)
+                inputStream.use { input ->
+                    FileOutputStream(tempImport).use { fos ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            digest.update(buffer, 0, read)
+                            fos.write(buffer, 0, read)
+                        }
+                    }
                 }
-                inputStream.close()
 
-                return@withContext if (targetFile.exists() && targetFile.length() > 0) targetFile else null
+                if (!tempImport.exists() || tempImport.length() == 0L || !PdfEngine.hasPdfHeader(tempImport)) {
+                    tempImport.delete()
+                    return@withContext null
+                }
+
+                val incomingHash = digest.digest().joinToString("") { "%02x".format(it) }
+                val incomingLength = tempImport.length()
+
+                val importsDir = File(context.filesDir, "imported_pdfs").apply { mkdirs() }
+                val baseName = if (sanitizedName.endsWith(".pdf", ignoreCase = true)) {
+                    sanitizedName.substring(0, sanitizedName.length - 4)
+                } else {
+                    sanitizedName
+                }
+
+                // Check if this exact document content already exists under baseName or baseName (k)
+                var counter = 0
+                while (true) {
+                    val candidateName = if (counter == 0) "$baseName.pdf" else "$baseName ($counter).pdf"
+                    val candidate = File(importsDir, candidateName)
+                    if (!candidate.exists()) {
+                        // Unused slot: move tempImport here
+                        if (!tempImport.renameTo(candidate)) {
+                            FileOutputStream(candidate).use { fos ->
+                                FileInputStream(tempImport).use { fis ->
+                                    fis.copyTo(fos)
+                                }
+                            }
+                            tempImport.delete()
+                        }
+                        return@withContext if (candidate.exists() && candidate.length() > 0) candidate else null
+                    } else if (candidate.length() == incomingLength && computeSha256(candidate) == incomingHash) {
+                        // Identical content already imported: reuse existing file
+                        tempImport.delete()
+                        return@withContext candidate
+                    }
+                    counter++
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
+                tempImport?.delete()
+                return@withContext null
             }
         }
         return@withContext null
     }
 
     suspend fun registerPdfFile(file: File, isFavorite: Boolean = false) = withContext(Dispatchers.IO) {
-        if (!file.exists() || file.length() == 0L) return@withContext
+        if (!file.exists() || !file.isFile || file.length() == 0L) return@withContext
+        if (!file.name.endsWith(".pdf", ignoreCase = true) || !PdfEngine.hasPdfHeader(file)) return@withContext
         val meta = PdfEngine.getPdfMetadata(context, Uri.fromFile(file))
         val pageCount = meta?.pageCount ?: 1
         val existing = dao.getPdfByPath(file.absolutePath)
@@ -97,7 +181,6 @@ class PdfRepository(
                 null
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -171,6 +254,14 @@ class PdfRepository(
         outputFile
     }
 
+    suspend fun convertTextFileToPdf(textUri: Uri, outputName: String): File? = withContext(Dispatchers.IO) {
+        val outputFile = PdfEngine.convertTextFileToPdf(context, textUri, outputFileName = outputName)
+        if (outputFile != null) {
+            registerPdfFile(outputFile)
+        }
+        outputFile
+    }
+
     suspend fun organizePages(pdfFile: File, pages: List<PdfPageItem>, outputName: String): File? = withContext(Dispatchers.IO) {
         val outputFile = PdfEngine.organizePages(context, pdfFile, pages, outputName)
         if (outputFile != null) {
@@ -179,14 +270,19 @@ class PdfRepository(
         outputFile
     }
 
-    suspend fun protectPdf(pdfFile: File, password: String, outputName: String): File? = withContext(Dispatchers.IO) {
-        val isManagedFile = pdfFile.absolutePath.startsWith(context.filesDir.absolutePath)
+    suspend fun protectPdf(
+        pdfFile: File,
+        password: String,
+        outputName: String,
+        replaceOriginal: Boolean = false
+    ): File? = withContext(Dispatchers.IO) {
+        val defaultName = outputName.trim().ifBlank { "${pdfFile.nameWithoutExtension}_protected.pdf" }
         val resultFile = PdfEngine.protectPdf(
             context = context,
             pdfFile = pdfFile,
             userPassword = password,
-            outputName = outputName,
-            inPlace = isManagedFile
+            outputName = defaultName,
+            inPlace = replaceOriginal
         )
         if (resultFile != null) {
             registerPdfFile(resultFile)
@@ -194,36 +290,123 @@ class PdfRepository(
         resultFile
     }
 
-    suspend fun removePassword(pdfFile: File, password: String, outputName: String): File? = withContext(Dispatchers.IO) {
-        val isManagedFile = pdfFile.absolutePath.startsWith(context.filesDir.absolutePath)
-        val defaultName = if (outputName.isNotBlank()) outputName else "${pdfFile.nameWithoutExtension}_unprotected.pdf"
-        val resultFile = PdfEngine.removePassword(
+    /**
+     * Removes password protection from [pdfFile].
+     * Safe default: Save as New ([replaceOriginal] = false). Never silently overwrites [pdfFile]
+     * merely because it resides inside app-managed storage.
+     */
+    suspend fun removePasswordDetailed(
+        pdfFile: File,
+        password: String,
+        outputName: String,
+        replaceOriginal: Boolean = false
+    ): PdfEngine.UnprotectResult = withContext(Dispatchers.IO) {
+        val defaultName = outputName.trim().ifBlank { "${pdfFile.nameWithoutExtension}_unprotected.pdf" }
+        val result = PdfEngine.removePasswordDetailed(
             context = context,
             pdfFile = pdfFile,
             currentPassword = password,
             outputName = defaultName,
-            inPlace = isManagedFile
+            inPlace = replaceOriginal
         )
-        if (resultFile != null) {
-            registerPdfFile(resultFile)
+        if (result is PdfEngine.UnprotectResult.Success) {
+            registerPdfFile(result.file)
         }
-        resultFile
+        result
     }
 
-    suspend fun convertPdfToImages(pdfFile: File, password: String? = null): List<File> = withContext(Dispatchers.IO) {
-        PdfEngine.convertPdfToImages(context, pdfFile, password = password)
-    }
-
-    suspend fun extractTextFromPdf(pdfFile: File, password: String? = null): File? = withContext(Dispatchers.IO) {
-        val outputFile = PdfEngine.extractTextFromPdf(context, pdfFile, password = password)
-        if (outputFile != null) {
-            registerPdfFile(outputFile)
+    suspend fun removePassword(
+        pdfFile: File,
+        password: String,
+        outputName: String,
+        replaceOriginal: Boolean = false
+    ): File? = withContext(Dispatchers.IO) {
+        when (val result = removePasswordDetailed(pdfFile, password, outputName, replaceOriginal)) {
+            is PdfEngine.UnprotectResult.Success -> result.file
+            is PdfEngine.UnprotectResult.Error -> null
         }
-        outputFile
     }
 
-    suspend fun convertImageFormat(imageUri: Uri, targetFormat: android.graphics.Bitmap.CompressFormat, outputName: String): File? = withContext(Dispatchers.IO) {
-        PdfEngine.convertImageFormat(context, imageUri, targetFormat, outputName)
+    suspend fun convertPdfToImagesDetailed(
+        pdfFile: File,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+        password: String? = null,
+        outputPrefix: String = pdfFile.nameWithoutExtension
+    ): PdfEngine.PdfToImagesResult = withContext(Dispatchers.IO) {
+        PdfEngine.convertPdfToImagesDetailed(
+            context = context,
+            pdfFile = pdfFile,
+            format = format,
+            password = password,
+            outputPrefix = outputPrefix
+        )
+    }
+
+    suspend fun convertPdfToImages(
+        pdfFile: File,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+        password: String? = null,
+        outputPrefix: String = pdfFile.nameWithoutExtension
+    ): List<File> = withContext(Dispatchers.IO) {
+        PdfEngine.convertPdfToImages(
+            context = context,
+            pdfFile = pdfFile,
+            format = format,
+            password = password,
+            outputPrefix = outputPrefix
+        )
+    }
+
+    suspend fun extractTextFromPdfDetailed(
+        pdfFile: File,
+        password: String? = null,
+        outputName: String = "${pdfFile.nameWithoutExtension}_text.txt"
+    ): PdfEngine.TextExtractResult = withContext(Dispatchers.IO) {
+        PdfEngine.extractTextFromPdfDetailed(
+            context = context,
+            pdfFile = pdfFile,
+            password = password,
+            outputName = outputName
+        )
+    }
+
+    suspend fun extractTextFromPdf(
+        pdfFile: File,
+        password: String? = null,
+        outputName: String = "${pdfFile.nameWithoutExtension}_text.txt"
+    ): File? = withContext(Dispatchers.IO) {
+        PdfEngine.extractTextFromPdf(
+            context = context,
+            pdfFile = pdfFile,
+            password = password,
+            outputName = outputName
+        )
+    }
+
+    suspend fun convertImageFormatDetailed(
+        imageUri: Uri,
+        targetFormat: Bitmap.CompressFormat,
+        outputName: String
+    ): PdfEngine.ImageConversionResult = withContext(Dispatchers.IO) {
+        PdfEngine.convertImageFormatDetailed(
+            context = context,
+            imageUri = imageUri,
+            targetFormat = targetFormat,
+            outputName = outputName
+        )
+    }
+
+    suspend fun convertImageFormat(
+        imageUri: Uri,
+        targetFormat: Bitmap.CompressFormat,
+        outputName: String
+    ): File? = withContext(Dispatchers.IO) {
+        PdfEngine.convertImageFormat(
+            context = context,
+            imageUri = imageUri,
+            targetFormat = targetFormat,
+            outputName = outputName
+        )
     }
 
     suspend fun ensureStarterSamplePdf(): File = withContext(Dispatchers.IO) {

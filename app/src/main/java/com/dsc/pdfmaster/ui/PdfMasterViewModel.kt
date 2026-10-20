@@ -1,7 +1,10 @@
 package com.dsc.pdfmaster.ui
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dsc.pdfmaster.data.database.PdfDatabase
@@ -10,9 +13,11 @@ import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.dsc.pdfmaster.data.model.PdfTool
 import com.dsc.pdfmaster.data.model.PdfToolType
-import com.dsc.pdfmaster.data.model.pdfToolsList
 import com.dsc.pdfmaster.data.repository.PdfRepository
 import com.dsc.pdfmaster.pdfengine.PdfEngine
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 enum class ScreenRoute {
@@ -63,6 +69,8 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     private val db = PdfDatabase.getDatabase(application)
     val repository = PdfRepository(application, db.recentPdfDao())
 
+    private var activeOperationJob: Job? = null
+
     private val _currentRoute = MutableStateFlow(ScreenRoute.HOME)
     val currentRoute: StateFlow<ScreenRoute> = _currentRoute.asStateFlow()
 
@@ -99,6 +107,47 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     // Currently opened PDF for Viewer or Operations
     private val _selectedPdfFile = MutableStateFlow<File?>(null)
     val selectedPdfFile: StateFlow<File?> = _selectedPdfFile.asStateFlow()
+
+    // Unprotect (Remove Password) state
+    private val _selectedPdfSecurityState = MutableStateFlow<PdfEngine.PdfSecurityState?>(null)
+    val selectedPdfSecurityState: StateFlow<PdfEngine.PdfSecurityState?> = _selectedPdfSecurityState.asStateFlow()
+
+    private val _unprotectErrorMessage = MutableStateFlow<String?>(null)
+    val unprotectErrorMessage: StateFlow<String?> = _unprotectErrorMessage.asStateFlow()
+
+    private val _unprotectResult = MutableStateFlow<PdfEngine.UnprotectResult.Success?>(null)
+    val unprotectResult: StateFlow<PdfEngine.UnprotectResult.Success?> = _unprotectResult.asStateFlow()
+
+    // Explicit Conversion Session States (never pre-populated with starter sample PDF)
+    private val _conversionSourcePdf = MutableStateFlow<File?>(null)
+    val conversionSourcePdf: StateFlow<File?> = _conversionSourcePdf.asStateFlow()
+
+    private val _conversionPdfRequiresPassword = MutableStateFlow(false)
+    val conversionPdfRequiresPassword: StateFlow<Boolean> = _conversionPdfRequiresPassword.asStateFlow()
+
+    private val _conversionSourceImageUri = MutableStateFlow<Uri?>(null)
+    val conversionSourceImageUri: StateFlow<Uri?> = _conversionSourceImageUri.asStateFlow()
+
+    private val _conversionSourceImageName = MutableStateFlow<String?>(null)
+    val conversionSourceImageName: StateFlow<String?> = _conversionSourceImageName.asStateFlow()
+
+    private val _conversionSourceTextUri = MutableStateFlow<Uri?>(null)
+    val conversionSourceTextUri: StateFlow<Uri?> = _conversionSourceTextUri.asStateFlow()
+
+    private val _conversionSourceTextName = MutableStateFlow<String?>(null)
+    val conversionSourceTextName: StateFlow<String?> = _conversionSourceTextName.asStateFlow()
+
+    private val _conversionSourceTextPreview = MutableStateFlow<String?>(null)
+    val conversionSourceTextPreview: StateFlow<String?> = _conversionSourceTextPreview.asStateFlow()
+
+    private val _conversionOutputFiles = MutableStateFlow<List<File>>(emptyList())
+    val conversionOutputFiles: StateFlow<List<File>> = _conversionOutputFiles.asStateFlow()
+
+    private val _conversionExtractedText = MutableStateFlow<String?>(null)
+    val conversionExtractedText: StateFlow<String?> = _conversionExtractedText.asStateFlow()
+
+    private val _conversionErrorMessage = MutableStateFlow<String?>(null)
+    val conversionErrorMessage: StateFlow<String?> = _conversionErrorMessage.asStateFlow()
 
     // Files selected for Merge
     private val _selectedFilesForMerge = MutableStateFlow<List<File>>(emptyList())
@@ -143,7 +192,6 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         viewModelScope.launch {
-            // Ensure sample PDF exists on first launch
             val sample = repository.ensureStarterSamplePdf()
             if (_selectedPdfFile.value == null) {
                 _selectedPdfFile.value = sample
@@ -154,6 +202,15 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     fun navigateTo(route: ScreenRoute) {
         _isProcessing.value = false
         if (_currentRoute.value == route) return
+
+        if (route == ScreenRoute.CONVERT_PDF) {
+            resetConversionSession()
+        }
+        if (route == ScreenRoute.REMOVE_PASSWORD) {
+            _unprotectErrorMessage.value = null
+            _unprotectResult.value = null
+            refreshSelectedPdfSecurityState()
+        }
 
         if (route in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
             backStack.clear()
@@ -178,6 +235,8 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun resetProcessingState() {
+        activeOperationJob?.cancel()
+        activeOperationJob = null
         _isProcessing.value = false
     }
 
@@ -200,6 +259,22 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         _userNotification.value = null
     }
 
+    fun clearUnprotectFeedback() {
+        _unprotectErrorMessage.value = null
+        _unprotectResult.value = null
+    }
+
+    fun refreshSelectedPdfSecurityState(fileOverride: File? = null) {
+        val target = fileOverride ?: _selectedPdfFile.value
+        if (target == null) {
+            _selectedPdfSecurityState.value = null
+            return
+        }
+        viewModelScope.launch {
+            _selectedPdfSecurityState.value = PdfEngine.inspectPdfSecurity(getApplication(), target)
+        }
+    }
+
     fun openPdfInViewer(file: File) {
         _selectedPdfFile.value = file
         viewModelScope.launch {
@@ -213,12 +288,15 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             val file = repository.getOrCreateManagedFileFromUri(uri)
             if (file != null) {
                 _selectedPdfFile.value = file
+                _unprotectErrorMessage.value = null
+                _unprotectResult.value = null
+                _selectedPdfSecurityState.value = PdfEngine.inspectPdfSecurity(getApplication(), file)
                 repository.registerPdfFile(file)
                 if (openViewer) {
                     navigateTo(ScreenRoute.PDF_VIEWER)
                 }
             } else {
-                _userNotification.value = "Failed to load selected PDF document"
+                _userNotification.value = "Selected file is not a valid PDF document"
             }
         }
     }
@@ -263,6 +341,9 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setSelectedPdfFile(file: File) {
         _selectedPdfFile.value = file
+        _unprotectErrorMessage.value = null
+        _unprotectResult.value = null
+        refreshSelectedPdfSecurityState(file)
         viewModelScope.launch {
             repository.registerPdfFile(file)
         }
@@ -271,19 +352,19 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     // Launch tool action from Dashboard
     fun launchTool(tool: PdfTool) {
         when (tool.type) {
-            PdfToolType.EXTRACT_PAGES -> _currentRoute.value = ScreenRoute.EXTRACT_PAGES
-            PdfToolType.MERGE -> _currentRoute.value = ScreenRoute.MERGE_PDF
-            PdfToolType.SPLIT -> _currentRoute.value = ScreenRoute.SPLIT_PDF
-            PdfToolType.COMPRESS -> _currentRoute.value = ScreenRoute.COMPRESS_PDF
-            PdfToolType.IMAGES_TO_PDF -> _currentRoute.value = ScreenRoute.IMAGES_TO_PDF
-            PdfToolType.VIEW_PDF -> _currentRoute.value = ScreenRoute.PDF_VIEWER
+            PdfToolType.EXTRACT_PAGES -> navigateTo(ScreenRoute.EXTRACT_PAGES)
+            PdfToolType.MERGE -> navigateTo(ScreenRoute.MERGE_PDF)
+            PdfToolType.SPLIT -> navigateTo(ScreenRoute.SPLIT_PDF)
+            PdfToolType.COMPRESS -> navigateTo(ScreenRoute.COMPRESS_PDF)
+            PdfToolType.IMAGES_TO_PDF -> navigateTo(ScreenRoute.IMAGES_TO_PDF)
+            PdfToolType.VIEW_PDF -> navigateTo(ScreenRoute.PDF_VIEWER)
             PdfToolType.MANAGE_PAGES -> {
                 if (_selectedPdfFile.value != null) {
                     loadPagesForPdf(_selectedPdfFile.value!!)
                 }
-                _currentRoute.value = ScreenRoute.MANAGE_PAGES
+                navigateTo(ScreenRoute.MANAGE_PAGES)
             }
-            PdfToolType.PASSWORD_PROTECT -> _currentRoute.value = ScreenRoute.PASSWORD_PROTECT
+            PdfToolType.PASSWORD_PROTECT -> navigateTo(ScreenRoute.PASSWORD_PROTECT)
         }
     }
 
@@ -297,12 +378,13 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun executeMergePdfs(outputFileName: String) {
+        if (_isProcessing.value) return
         val files = _selectedFilesForMerge.value
         if (files.size < 2) {
             _userNotification.value = "Please select at least 2 PDF files to merge"
             return
         }
-        viewModelScope.launch {
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Merging ${files.size} PDF files..."
             try {
@@ -313,10 +395,11 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                     _userNotification.value = "Merged successfully into ${result.name}!"
                     _currentRoute.value = ScreenRoute.PDF_VIEWER
                 } else {
-                    _userNotification.value = "Merge failed. Please try again."
+                    _userNotification.value = "Merge failed. Please verify the selected PDFs."
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Merge cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
                 _userNotification.value = "Merge failed due to an error"
             } finally {
                 _isProcessing.value = false
@@ -324,10 +407,10 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    // Images to PDF
+    // Text to PDF
     fun executeCreateTextPdf(textContent: String, outputName: String) {
-        if (textContent.isBlank()) return
-        viewModelScope.launch {
+        if (_isProcessing.value || textContent.isBlank()) return
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Generating Text PDF..."
             try {
@@ -339,8 +422,10 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     _userNotification.value = "Failed to create Text PDF"
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Operation cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                _userNotification.value = "Failed to create Text PDF"
             } finally {
                 _isProcessing.value = false
             }
@@ -355,13 +440,18 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         _selectedImageUris.value = _selectedImageUris.value.filter { it != uri }
     }
 
+    fun clearSelectedImagesForPdf() {
+        _selectedImageUris.value = emptyList()
+    }
+
     fun executeImagesToPdf(outputFileName: String) {
+        if (_isProcessing.value) return
         val uris = _selectedImageUris.value
         if (uris.isEmpty()) {
             _userNotification.value = "Please select at least 1 image"
             return
         }
-        viewModelScope.launch {
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Converting ${uris.size} images to PDF..."
             try {
@@ -372,10 +462,11 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                     _userNotification.value = "Converted to PDF: ${result.name}"
                     _currentRoute.value = ScreenRoute.PDF_VIEWER
                 } else {
-                    _userNotification.value = "Conversion failed. Check image formats."
+                    _userNotification.value = "Conversion failed. Check that all selected files are valid images."
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Image to PDF conversion cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
                 _userNotification.value = "Conversion failed due to an error"
             } finally {
                 _isProcessing.value = false
@@ -385,7 +476,8 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Compress PDF
     fun executeCompressPdf(file: File, level: PdfCompressionLevel, outputName: String) {
-        viewModelScope.launch {
+        if (_isProcessing.value) return
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Compressing PDF with ${level.label}..."
             try {
@@ -404,8 +496,9 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     _userNotification.value = "Compression failed."
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Compression cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
                 _userNotification.value = "Compression failed due to an error"
             } finally {
                 _isProcessing.value = false
@@ -425,8 +518,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 val pages = PdfEngine.loadPdfPageThumbnails(getApplication(), file)
                 _pdfPagesList.value = pages
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
             } finally {
                 _isLoadingPages.value = false
             }
@@ -451,26 +543,29 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun executeSaveOrganizedPages(file: File, outputName: String) {
+        if (_isProcessing.value) return
         val currentPages = _pdfPagesList.value
         val remainingPages = currentPages.filter { !it.isSelected }
         if (remainingPages.isEmpty()) {
             _userNotification.value = "Cannot delete all pages from PDF!"
             return
         }
-        viewModelScope.launch {
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Saving updated PDF structure..."
             try {
                 val result = repository.organizePages(file, currentPages, outputName)
                 if (result != null) {
                     _selectedPdfFile.value = result
-                    _userNotification.value = "Pages saved successfully!"
+                    _userNotification.value = "Pages saved successfully: ${result.name}"
                     _currentRoute.value = ScreenRoute.PDF_VIEWER
                 } else {
                     _userNotification.value = "Failed to organize pages."
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Operation cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                _userNotification.value = "Failed to organize pages."
             } finally {
                 _isProcessing.value = false
             }
@@ -489,11 +584,12 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Split PDF
     fun executeSplitPdf(file: File, pageIndices: List<Int>, outputName: String) {
+        if (_isProcessing.value) return
         if (pageIndices.isEmpty()) {
             _userNotification.value = "Please select valid page numbers to split"
             return
         }
-        viewModelScope.launch {
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Extracting ${pageIndices.size} pages..."
             try {
@@ -505,8 +601,10 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     _userNotification.value = "Failed to split PDF."
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Split cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                _userNotification.value = "Failed to split PDF."
             } finally {
                 _isProcessing.value = false
             }
@@ -515,104 +613,373 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Password Protect PDF
     fun executeProtectPdf(file: File, password: String, outputName: String) {
-        if (password.isBlank()) return
-        viewModelScope.launch {
+        if (_isProcessing.value || password.isBlank()) return
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Encrypting & locking PDF..."
             try {
                 val result = repository.protectPdf(file, password, outputName)
                 if (result != null) {
                     _selectedPdfFile.value = result
-                    _userNotification.value = "Document encrypted successfully!"
+                    _userNotification.value = "Document encrypted as ${result.name}!"
                     navigateTo(ScreenRoute.PDF_VIEWER)
                 } else {
                     _userNotification.value = "Failed to encrypt PDF."
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Encryption cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                _userNotification.value = "Failed to encrypt PDF."
             } finally {
                 _isProcessing.value = false
             }
         }
     }
 
-    fun executeRemovePassword(file: File, password: String, outputName: String) {
-        if (password.isBlank()) return
-        viewModelScope.launch {
+    /**
+     * Removes password protection from [file] and saves to a validated output file.
+     * - Prevents duplicate submissions during processing.
+     * - Supports blank password only when the PDF security configuration genuinely allows it.
+     * - Defaults to Save as New ([replaceOriginal] = false).
+     * - Never clears or replaces [selectedPdfFile] on failure.
+     */
+    fun executeRemovePassword(
+        file: File,
+        password: String,
+        outputName: String,
+        replaceOriginal: Boolean = false
+    ) {
+        if (_isProcessing.value) return
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
-            _processingMessage.value = "Removing PDF password..."
+            _unprotectErrorMessage.value = null
+            _unprotectResult.value = null
+            _processingMessage.value = "Verifying credentials & removing PDF password..."
             try {
-                val result = repository.removePassword(file, password, outputName)
-                if (result != null) {
-                    _selectedPdfFile.value = result
-                    _userNotification.value = "Password removed: ${result.name}"
-                    navigateTo(ScreenRoute.PDF_VIEWER)
-                } else {
-                    _userNotification.value = "Failed to remove password. Check current password."
+                val result = repository.removePasswordDetailed(
+                    pdfFile = file,
+                    password = password,
+                    outputName = outputName,
+                    replaceOriginal = replaceOriginal
+                )
+                when (result) {
+                    is PdfEngine.UnprotectResult.Success -> {
+                        _selectedPdfFile.value = result.file
+                        _unprotectResult.value = result
+                        _selectedPdfSecurityState.value = PdfEngine.PdfSecurityState.Unencrypted(result.pageCount)
+                        _userNotification.value = "Password removed: ${result.file.name}"
+                        navigateTo(ScreenRoute.PDF_VIEWER)
+                    }
+                    is PdfEngine.UnprotectResult.Error -> {
+                        _unprotectErrorMessage.value = result.message
+                        _userNotification.value = result.message
+                    }
                 }
+            } catch (e: CancellationException) {
+                _unprotectErrorMessage.value = "Operation was cancelled. Original file is unchanged."
+                _userNotification.value = "Password removal cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                val msg = "Failed to remove password: ${e.localizedMessage ?: "Unexpected error"}"
+                _unprotectErrorMessage.value = msg
+                _userNotification.value = msg
             } finally {
                 _isProcessing.value = false
             }
         }
     }
 
-    fun executePdfToImages(file: File, password: String? = null) {
+    // Conversion Session Management
+    fun resetConversionSession() {
+        _conversionSourcePdf.value = null
+        _conversionPdfRequiresPassword.value = false
+        _conversionSourceImageUri.value = null
+        _conversionSourceImageName.value = null
+        _conversionSourceTextUri.value = null
+        _conversionSourceTextName.value = null
+        _conversionSourceTextPreview.value = null
+        _conversionOutputFiles.value = emptyList()
+        _conversionExtractedText.value = null
+        _conversionErrorMessage.value = null
+    }
+
+    fun selectConversionPdfFromUri(uri: Uri) {
         viewModelScope.launch {
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            _conversionExtractedText.value = null
+            val file = repository.getOrCreateManagedFileFromUri(uri)
+            if (file != null && file.exists() && PdfEngine.hasPdfHeader(file)) {
+                _conversionSourcePdf.value = file
+                _conversionPdfRequiresPassword.value = PdfEngine.checkPasswordProtected(getApplication(), file)
+                repository.registerPdfFile(file)
+            } else {
+                _conversionSourcePdf.value = null
+                _conversionErrorMessage.value = "The selected file is not a valid PDF document."
+                _userNotification.value = "The selected file is not a valid PDF document."
+            }
+        }
+    }
+
+    fun setConversionSourcePdf(file: File?) {
+        _conversionOutputFiles.value = emptyList()
+        _conversionExtractedText.value = null
+        _conversionErrorMessage.value = null
+        if (file == null) {
+            _conversionSourcePdf.value = null
+            _conversionPdfRequiresPassword.value = false
+            return
+        }
+        viewModelScope.launch {
+            if (file.exists() && file.length() > 0 && PdfEngine.hasPdfHeader(file)) {
+                _conversionSourcePdf.value = file
+                _conversionPdfRequiresPassword.value = PdfEngine.checkPasswordProtected(getApplication(), file)
+            } else {
+                _conversionSourcePdf.value = null
+                _conversionErrorMessage.value = "Selected file is not a valid PDF document."
+            }
+        }
+    }
+
+    private fun resolveDisplayName(uri: Uri, defaultFallback: String): String {
+        if (uri.scheme == "file") {
+            return uri.path?.let { File(it).name } ?: defaultFallback
+        }
+        return try {
+            val cursor = getApplication<Application>().contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx != -1) {
+                        val name = it.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+            defaultFallback
+        } catch (e: Exception) {
+            defaultFallback
+        }
+    }
+
+    fun selectConversionImageFromUri(uri: Uri) {
+        viewModelScope.launch {
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            val isValid = withContext(Dispatchers.IO) {
+                try {
+                    if (!PdfEngine.hasSupportedImageHeader(getApplication(), uri)) {
+                        return@withContext false
+                    }
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    val stream = if (uri.scheme == "file") {
+                        uri.path?.let { File(it) }?.takeIf { it.exists() }?.inputStream()
+                    } else {
+                        getApplication<Application>().contentResolver.openInputStream(uri)
+                    }
+                    stream?.use { BitmapFactory.decodeStream(it, null, opts) }
+                    opts.outWidth > 0 && opts.outHeight > 0
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            if (isValid) {
+                _conversionSourceImageUri.value = uri
+                _conversionSourceImageName.value = resolveDisplayName(uri, "selected_image")
+            } else {
+                _conversionSourceImageUri.value = null
+                _conversionSourceImageName.value = null
+                _conversionErrorMessage.value = "Selected file is not a valid image."
+                _userNotification.value = "Selected file is not a valid image."
+            }
+        }
+    }
+
+    fun selectConversionTextFileFromUri(uri: Uri) {
+        viewModelScope.launch {
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            val text = withContext(Dispatchers.IO) {
+                PdfEngine.readValidatedPlainTextFromUri(getApplication(), uri)
+            }
+            if (!text.isNullOrBlank()) {
+                _conversionSourceTextUri.value = uri
+                _conversionSourceTextName.value = resolveDisplayName(uri, "document.txt")
+                _conversionSourceTextPreview.value = text.take(500)
+            } else {
+                _conversionSourceTextUri.value = null
+                _conversionSourceTextName.value = null
+                _conversionSourceTextPreview.value = null
+                _conversionErrorMessage.value = "Selected file is empty or is not a valid plain-text file."
+                _userNotification.value = "Selected file is empty or is not a valid plain-text file."
+            }
+        }
+    }
+
+    fun executePdfToImages(
+        file: File,
+        password: String? = null,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+        outputPrefix: String = file.nameWithoutExtension
+    ) {
+        if (_isProcessing.value) return
+        val formatLabel = if (format == Bitmap.CompressFormat.PNG) "PNG" else "JPEG"
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
-            _processingMessage.value = "Converting PDF pages to PNG images..."
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            _processingMessage.value = "Rendering PDF pages to $formatLabel images..."
             try {
-                val images = repository.convertPdfToImages(file, password)
-                if (images.isNotEmpty()) {
-                    _userNotification.value = "Exported ${images.size} PNG images to Output folder"
-                } else {
-                    _userNotification.value = "Failed to convert PDF pages to images"
+                val result = repository.convertPdfToImagesDetailed(
+                    pdfFile = file,
+                    format = format,
+                    password = password,
+                    outputPrefix = outputPrefix
+                )
+                when (result) {
+                    is PdfEngine.PdfToImagesResult.Success -> {
+                        _conversionOutputFiles.value = result.files
+                        _userNotification.value = "Exported ${result.files.size} $formatLabel image(s) (${result.files.first().name})"
+                    }
+                    is PdfEngine.PdfToImagesResult.Error -> {
+                        if (result.isPasswordProtected) {
+                            _conversionPdfRequiresPassword.value = true
+                        }
+                        _conversionErrorMessage.value = result.message
+                        _userNotification.value = result.message
+                    }
                 }
+            } catch (e: CancellationException) {
+                _conversionErrorMessage.value = "Conversion cancelled."
+                _userNotification.value = "PDF to $formatLabel conversion cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                val msg = "Failed to convert PDF pages to $formatLabel images"
+                _conversionErrorMessage.value = msg
+                _userNotification.value = msg
             } finally {
                 _isProcessing.value = false
             }
         }
     }
 
-    fun executePdfToText(file: File, password: String? = null) {
-        viewModelScope.launch {
+    fun executePdfToText(
+        file: File,
+        password: String? = null,
+        outputName: String = "${file.nameWithoutExtension}_text.txt"
+    ) {
+        if (_isProcessing.value) return
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            _conversionExtractedText.value = null
             _processingMessage.value = "Extracting text content from PDF..."
             try {
-                val textFile = repository.extractTextFromPdf(file, password)
-                if (textFile != null) {
-                    _selectedPdfFile.value = textFile
-                    _userNotification.value = "Text extracted to ${textFile.name}"
-                } else {
-                    _userNotification.value = "No text could be extracted from PDF"
+                val result = repository.extractTextFromPdfDetailed(
+                    pdfFile = file,
+                    password = password,
+                    outputName = outputName
+                )
+                when (result) {
+                    is PdfEngine.TextExtractResult.Success -> {
+                        _conversionOutputFiles.value = listOf(result.file)
+                        _conversionExtractedText.value = result.extractedText
+                        _userNotification.value = "Text extracted to ${result.file.name}"
+                    }
+                    is PdfEngine.TextExtractResult.Error -> {
+                        if (result.isPasswordProtected) {
+                            _conversionPdfRequiresPassword.value = true
+                        }
+                        _conversionErrorMessage.value = result.message
+                        _userNotification.value = result.message
+                    }
                 }
+            } catch (e: CancellationException) {
+                _conversionErrorMessage.value = "Text extraction cancelled."
+                _userNotification.value = "Text extraction cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                val msg = "Failed to extract text from PDF"
+                _conversionErrorMessage.value = msg
+                _userNotification.value = msg
             } finally {
                 _isProcessing.value = false
             }
         }
     }
 
-    fun executeConvertImageFormat(uri: Uri, isToJpeg: Boolean) {
-        viewModelScope.launch {
+    fun executeConvertImageFormat(
+        uri: Uri,
+        isToJpeg: Boolean,
+        outputName: String? = null
+    ) {
+        if (_isProcessing.value) return
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
-            val targetFormat = if (isToJpeg) android.graphics.Bitmap.CompressFormat.JPEG else android.graphics.Bitmap.CompressFormat.PNG
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            val targetFormat = if (isToJpeg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
             val ext = if (isToJpeg) "jpg" else "png"
-            val outputName = "Converted_Image_${System.currentTimeMillis() / 1000}.$ext"
-            _processingMessage.value = "Converting image format to ${ext.uppercase()}..."
+            val baseName = outputName?.trim()?.takeIf { it.isNotBlank() }
+                ?: "${(_conversionSourceImageName.value ?: "Converted_Image").substringBeforeLast('.')}_converted.$ext"
+            _processingMessage.value = "Converting image to ${ext.uppercase()}..."
             try {
-                val imgFile = repository.convertImageFormat(uri, targetFormat, outputName)
-                if (imgFile != null) {
-                    _userNotification.value = "Image converted to ${imgFile.name}"
-                } else {
-                    _userNotification.value = "Failed to convert image format"
+                val result = repository.convertImageFormatDetailed(uri, targetFormat, baseName)
+                when (result) {
+                    is PdfEngine.ImageConversionResult.Success -> {
+                        _conversionOutputFiles.value = listOf(result.file)
+                        _userNotification.value = "Image converted to ${result.file.name} (${result.width}x${result.height})"
+                    }
+                    is PdfEngine.ImageConversionResult.Error -> {
+                        _conversionErrorMessage.value = result.message
+                        _userNotification.value = result.message
+                    }
                 }
+            } catch (e: CancellationException) {
+                _conversionErrorMessage.value = "Image conversion cancelled."
+                _userNotification.value = "Image conversion cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
+                val msg = "Failed to convert image format"
+                _conversionErrorMessage.value = msg
+                _userNotification.value = msg
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun executeConvertTextFileToPdf(uri: Uri, outputName: String) {
+        if (_isProcessing.value) return
+        activeOperationJob = viewModelScope.launch {
+            _isProcessing.value = true
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            _processingMessage.value = "Converting TXT file to PDF..."
+            try {
+                val desiredName = outputName.trim().ifBlank {
+                    "${(_conversionSourceTextName.value ?: "Text_Document").substringBeforeLast('.')}.pdf"
+                }
+                val pdfFile = repository.convertTextFileToPdf(uri, desiredName)
+                if (pdfFile != null) {
+                    _conversionOutputFiles.value = listOf(pdfFile)
+                    _selectedPdfFile.value = pdfFile
+                    _userNotification.value = "TXT converted to PDF: ${pdfFile.name}"
+                } else {
+                    val msg = "Failed to convert TXT file to PDF. Ensure the file contains valid text."
+                    _conversionErrorMessage.value = msg
+                    _userNotification.value = msg
+                }
+            } catch (e: CancellationException) {
+                _conversionErrorMessage.value = "TXT to PDF conversion cancelled."
+                _userNotification.value = "TXT to PDF conversion cancelled"
+            } catch (e: Exception) {
+                val msg = "Failed to convert TXT file to PDF"
+                _conversionErrorMessage.value = msg
+                _userNotification.value = msg
             } finally {
                 _isProcessing.value = false
             }
@@ -630,12 +997,13 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         password: String? = null,
         onComplete: ((PdfEngine.ExtractResult) -> Unit)? = null
     ) {
+        if (_isProcessing.value) return
         if (pageIndices.isEmpty()) {
             _userNotification.value = "Please select at least 1 page to extract"
             return
         }
 
-        viewModelScope.launch {
+        activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _processingMessage.value = "Extracting ${pageIndices.size} pages..."
             try {
@@ -656,8 +1024,9 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                         onComplete?.invoke(result)
                     }
                 }
+            } catch (e: CancellationException) {
+                _userNotification.value = "Extraction cancelled"
             } catch (e: Exception) {
-                e.printStackTrace()
                 _userNotification.value = "Extraction failed: ${e.localizedMessage ?: "Unknown error"}"
             } finally {
                 _isProcessing.value = false
