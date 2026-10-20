@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.Card
@@ -116,7 +118,7 @@ fun HomeScreen(
                 ) {
                     QuickActionCard(
                         title = "Convert",
-                        subtitle = "Local export",
+                        subtitle = "Office / Images / TXT",
                         icon = Icons.Default.Transform,
                         onClick = { viewModel.navigateTo(ScreenRoute.CONVERT_PDF) },
                         tag = "action_convert_pdf",
@@ -128,6 +130,27 @@ fun HomeScreen(
                         icon = Icons.Default.Compress,
                         onClick = { viewModel.navigateTo(ScreenRoute.COMPRESS_PDF) },
                         tag = "action_compress_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    QuickActionCard(
+                        title = "Protect PDF",
+                        subtitle = "256-bit AES lock",
+                        icon = Icons.Default.Lock,
+                        onClick = { viewModel.navigateTo(ScreenRoute.PASSWORD_PROTECT) },
+                        tag = "action_protect_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionCard(
+                        title = "Unlock PDF",
+                        subtitle = "Remove password",
+                        icon = Icons.Default.LockOpen,
+                        onClick = { viewModel.navigateTo(ScreenRoute.REMOVE_PASSWORD) },
+                        tag = "action_remove_password",
                         modifier = Modifier.weight(1f)
                     )
                 }

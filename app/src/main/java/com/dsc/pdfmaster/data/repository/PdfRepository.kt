@@ -8,6 +8,7 @@ import com.dsc.pdfmaster.data.database.RecentPdfDao
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfPageItem
+import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -148,11 +149,19 @@ class PdfRepository(
         return@withContext null
     }
 
-    suspend fun registerPdfFile(file: File, isFavorite: Boolean = false) = withContext(Dispatchers.IO) {
+    suspend fun registerPdfFile(
+        file: File,
+        isFavorite: Boolean = false,
+        knownPageCount: Int? = null
+    ) = withContext(Dispatchers.IO) {
         if (!file.exists() || !file.isFile || file.length() == 0L) return@withContext
         if (!file.name.endsWith(".pdf", ignoreCase = true) || !PdfEngine.hasPdfHeader(file)) return@withContext
-        val meta = PdfEngine.getPdfMetadata(context, Uri.fromFile(file))
-        val pageCount = meta?.pageCount ?: 1
+        val pageCount = if (knownPageCount != null && knownPageCount > 0) {
+            knownPageCount
+        } else {
+            val meta = PdfEngine.getPdfMetadata(context, Uri.fromFile(file))
+            meta?.pageCount ?: 1
+        }
         val existing = dao.getPdfByPath(file.absolutePath)
         val entity = RecentPdfEntity(
             filePath = file.absolutePath,
@@ -270,24 +279,58 @@ class PdfRepository(
         outputFile
     }
 
+    /**
+     * Encrypts and password-protects [pdfFile] with [password].
+     * Safe default: Save as New ([replaceOriginal] = false) using a unique filename.
+     */
+    suspend fun protectPdfDetailed(
+        pdfFile: File,
+        password: String,
+        confirmPassword: String = password,
+        ownerPassword: String? = null,
+        currentPassword: String? = null,
+        allowPrinting: Boolean = true,
+        allowCopy: Boolean = true,
+        outputName: String,
+        replaceOriginal: Boolean = false
+    ): PdfEngine.ProtectResult = withContext(Dispatchers.IO) {
+        val defaultName = outputName.trim().ifBlank { "${pdfFile.nameWithoutExtension}_protected.pdf" }
+        val result = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = pdfFile,
+            userPassword = password,
+            confirmPassword = confirmPassword,
+            ownerPassword = ownerPassword ?: password,
+            currentPassword = currentPassword,
+            allowPrinting = allowPrinting,
+            allowCopy = allowCopy,
+            outputName = defaultName,
+            inPlace = replaceOriginal
+        )
+        if (result is PdfEngine.ProtectResult.Success) {
+            registerPdfFile(result.file, knownPageCount = result.pageCount)
+        }
+        result
+    }
+
     suspend fun protectPdf(
         pdfFile: File,
         password: String,
         outputName: String,
         replaceOriginal: Boolean = false
     ): File? = withContext(Dispatchers.IO) {
-        val defaultName = outputName.trim().ifBlank { "${pdfFile.nameWithoutExtension}_protected.pdf" }
-        val resultFile = PdfEngine.protectPdf(
-            context = context,
-            pdfFile = pdfFile,
-            userPassword = password,
-            outputName = defaultName,
-            inPlace = replaceOriginal
-        )
-        if (resultFile != null) {
-            registerPdfFile(resultFile)
+        when (
+            val result = protectPdfDetailed(
+                pdfFile = pdfFile,
+                password = password,
+                confirmPassword = password,
+                outputName = outputName,
+                replaceOriginal = replaceOriginal
+            )
+        ) {
+            is PdfEngine.ProtectResult.Success -> result.file
+            is PdfEngine.ProtectResult.Error -> null
         }
-        resultFile
     }
 
     /**
@@ -409,10 +452,34 @@ class PdfRepository(
         )
     }
 
+    suspend fun inspectOfficeSource(
+        uri: Uri,
+        expectedType: OfficeToPdfConverter.OfficeDocumentType
+    ): OfficeToPdfConverter.OfficeSourceInspection = withContext(Dispatchers.IO) {
+        PdfEngine.inspectOfficeSource(context, uri, expectedType)
+    }
+
+    suspend fun convertOfficeToPdfDetailed(
+        uri: Uri,
+        expectedType: OfficeToPdfConverter.OfficeDocumentType,
+        outputName: String
+    ): OfficeToPdfConverter.OfficeConversionResult = withContext(Dispatchers.IO) {
+        val result = PdfEngine.convertOfficeToPdfDetailed(
+            context = context,
+            uri = uri,
+            expectedType = expectedType,
+            outputName = outputName
+        )
+        if (result is OfficeToPdfConverter.OfficeConversionResult.Success) {
+            registerPdfFile(result.file, knownPageCount = result.pageCount)
+        }
+        result
+    }
+
     suspend fun ensureStarterSamplePdf(): File = withContext(Dispatchers.IO) {
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
         val sampleFile = File(outputDir, "Welcome_PDF_Master.pdf")
-        if (sampleFile.exists() && sampleFile.length() > 0) {
+        if (sampleFile.exists() && sampleFile.length() > 0 && PdfEngine.hasPdfHeader(sampleFile)) {
             sampleFile
         } else {
             val starterFile = PdfEngine.createSampleWelcomePdf(context)

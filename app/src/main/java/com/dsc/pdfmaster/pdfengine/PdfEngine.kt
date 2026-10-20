@@ -53,6 +53,35 @@ object PdfEngine {
         ) : ExtractResult()
     }
 
+    enum class ProtectError {
+        FILE_NOT_FOUND_OR_EMPTY,
+        INVALID_OR_CORRUPTED_PDF,
+        ALREADY_ENCRYPTED,
+        OWNER_PASSWORD_REQUIRED,
+        INCORRECT_CURRENT_PASSWORD,
+        UNSUPPORTED_ENCRYPTION,
+        EMPTY_OR_BLANK_PASSWORD,
+        PASSWORD_CONFIRMATION_MISMATCH,
+        OUTPUT_WRITE_FAILED,
+        OUTPUT_VALIDATION_FAILED,
+        REPLACE_NOT_PERMITTED,
+        CANCELLED
+    }
+
+    sealed class ProtectResult {
+        data class Success(
+            val file: File,
+            val pageCount: Int,
+            val fileSizeBytes: Long,
+            val replacedOriginal: Boolean = false
+        ) : ProtectResult()
+
+        data class Error(
+            val error: ProtectError,
+            val message: String
+        ) : ProtectResult()
+    }
+
     enum class UnprotectError {
         FILE_NOT_FOUND_OR_EMPTY,
         INVALID_OR_CORRUPTED_PDF,
@@ -1463,6 +1492,344 @@ object PdfEngine {
     }
 
     /**
+     * Validates that [file] is a genuine, password-protected PDF that:
+     * 1. Exists, is non-empty, and starts with `%PDF-`.
+     * 2. Cannot be opened without a password (throws InvalidPasswordException).
+     * 3. Cannot be opened with an incorrect password.
+     * 4. Opens cleanly with [expectedPassword], reports `isEncrypted == true`,
+     *    and preserves all [expectedPageCount] pages.
+     */
+    fun validateProtectedPdfFile(
+        context: Context,
+        file: File,
+        expectedPassword: String,
+        expectedPageCount: Int
+    ): Boolean {
+        if (!file.exists() || !file.isFile || file.length() == 0L || !hasPdfHeader(file)) {
+            return false
+        }
+        return try {
+            PDFBoxResourceLoader.init(context)
+
+            // 1. Opening without a password MUST fail with InvalidPasswordException
+            val openedWithoutPassword = try {
+                PDDocument.load(file).use { doc ->
+                    !doc.isEncrypted
+                }
+            } catch (e: InvalidPasswordException) {
+                false
+            } catch (e: Throwable) {
+                return false
+            }
+            if (openedWithoutPassword) return false
+
+            // 2. Opening with a wrong password MUST fail with InvalidPasswordException
+            val wrongCandidate = "${expectedPassword}_invalid_probe_99"
+            val openedWithWrongPassword = try {
+                PDDocument.load(file, wrongCandidate).use {
+                    true
+                }
+            } catch (e: InvalidPasswordException) {
+                false
+            } catch (e: Throwable) {
+                return false
+            }
+            if (openedWithWrongPassword) return false
+
+            // 3. Opening with the expected password MUST succeed and match expectedPageCount
+            PDDocument.load(file, expectedPassword).use { doc ->
+                if (!doc.isEncrypted) return false
+                if (doc.numberOfPages != expectedPageCount || doc.numberOfPages <= 0) return false
+                doc.getPage(0)
+                true
+            }
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Detailed PDF Encryption workflow with full source security inspection,
+     * password & confirmation validation, temporary file staging, post-encryption verification,
+     * and safe non-destructive Save as New (default) or atomic Replace Original.
+     */
+    suspend fun protectPdfDetailed(
+        context: Context,
+        pdfFile: File,
+        userPassword: String,
+        confirmPassword: String = userPassword,
+        ownerPassword: String = userPassword,
+        currentPassword: String? = null,
+        allowPrinting: Boolean = true,
+        allowCopy: Boolean = true,
+        outputName: String = "${pdfFile.nameWithoutExtension}_protected.pdf",
+        inPlace: Boolean = false,
+        tempDir: File = context.cacheDir,
+        outputDir: File = File(context.filesDir, "output_pdfs"),
+        outputValidator: ((Context, File, String, Int) -> Boolean)? = null
+    ): ProtectResult = withContext(Dispatchers.IO) {
+        coroutineContext.ensureActive()
+
+        if (userPassword.isBlank()) {
+            return@withContext ProtectResult.Error(
+                ProtectError.EMPTY_OR_BLANK_PASSWORD,
+                "Password cannot be empty or contain only whitespace."
+            )
+        }
+
+        if (userPassword != confirmPassword) {
+            return@withContext ProtectResult.Error(
+                ProtectError.PASSWORD_CONFIRMATION_MISMATCH,
+                "Passwords do not match. Please make sure both password fields are identical."
+            )
+        }
+
+        if (!pdfFile.exists() || !pdfFile.isFile || pdfFile.length() == 0L) {
+            return@withContext ProtectResult.Error(
+                ProtectError.FILE_NOT_FOUND_OR_EMPTY,
+                "Selected PDF file does not exist or is empty."
+            )
+        }
+
+        val securityState = inspectPdfSecurity(context, pdfFile)
+        when (securityState) {
+            is PdfSecurityState.InvalidOrCorrupted -> {
+                return@withContext ProtectResult.Error(
+                    ProtectError.INVALID_OR_CORRUPTED_PDF,
+                    securityState.message
+                )
+            }
+            is PdfSecurityState.UnsupportedEncryption -> {
+                return@withContext ProtectResult.Error(
+                    ProtectError.UNSUPPORTED_ENCRYPTION,
+                    securityState.message
+                )
+            }
+            is PdfSecurityState.UserPasswordRequired -> {
+                if (currentPassword.isNullOrEmpty()) {
+                    return@withContext ProtectResult.Error(
+                        ProtectError.ALREADY_ENCRYPTED,
+                        "This PDF is already password-protected. Enter its current password to set a new password, or use Remove Password first."
+                    )
+                }
+            }
+            is PdfSecurityState.OwnerPasswordRestricted -> {
+                if (currentPassword.isNullOrEmpty()) {
+                    return@withContext ProtectResult.Error(
+                        ProtectError.ALREADY_ENCRYPTED,
+                        "This PDF has owner permission restrictions. Enter the owner password to replace its security settings."
+                    )
+                }
+            }
+            is PdfSecurityState.EncryptedWithBlankPassword,
+            is PdfSecurityState.Unencrypted -> {
+                // Eligible for direct encryption
+            }
+        }
+
+        if (inPlace) {
+            val parent = pdfFile.parentFile
+            if (!pdfFile.canWrite() || parent == null || !parent.exists() || !parent.isDirectory || !parent.canWrite()) {
+                return@withContext ProtectResult.Error(
+                    ProtectError.REPLACE_NOT_PERMITTED,
+                    "Cannot replace original file because its storage location is read-only. Save as New instead."
+                )
+            }
+        }
+
+        if ((tempDir.exists() && !tempDir.isDirectory) || (!tempDir.exists() && !tempDir.mkdirs()) || !tempDir.canWrite()) {
+            return@withContext ProtectResult.Error(
+                ProtectError.OUTPUT_WRITE_FAILED,
+                "Unable to create temporary file in cache storage."
+            )
+        }
+
+        val tempEncrypted = File(tempDir, "temp_encrypt_${System.nanoTime()}.pdf")
+        var doc: PDDocument? = null
+        try {
+            PDFBoxResourceLoader.init(context)
+            doc = try {
+                when (securityState) {
+                    is PdfSecurityState.UserPasswordRequired,
+                    is PdfSecurityState.OwnerPasswordRestricted -> {
+                        PDDocument.load(pdfFile, currentPassword ?: "")
+                    }
+                    is PdfSecurityState.EncryptedWithBlankPassword -> {
+                        PDDocument.load(pdfFile, currentPassword ?: "")
+                    }
+                    else -> {
+                        PDDocument.load(pdfFile)
+                    }
+                }
+            } catch (e: InvalidPasswordException) {
+                return@withContext ProtectResult.Error(
+                    ProtectError.INCORRECT_CURRENT_PASSWORD,
+                    "Incorrect current password for the already-encrypted PDF."
+                )
+            } catch (e: Throwable) {
+                return@withContext if (isUnsupportedEncryptionException(e, pdfFile)) {
+                    ProtectResult.Error(
+                        ProtectError.UNSUPPORTED_ENCRYPTION,
+                        "Unsupported PDF encryption configuration: ${e.localizedMessage ?: "Unsupported security handler"}"
+                    )
+                } else {
+                    ProtectResult.Error(
+                        ProtectError.INVALID_OR_CORRUPTED_PDF,
+                        "Unable to open PDF document: ${e.localizedMessage ?: "Corrupted PDF"}"
+                    )
+                }
+            }
+
+            if (securityState is PdfSecurityState.OwnerPasswordRestricted) {
+                val ap = doc.currentAccessPermission
+                if (ap == null || !ap.isOwnerPermission) {
+                    return@withContext ProtectResult.Error(
+                        ProtectError.OWNER_PASSWORD_REQUIRED,
+                        "Owner password required: the supplied credential does not authorize modifying security on this PDF."
+                    )
+                }
+            }
+
+            val expectedPageCount = doc.numberOfPages
+            if (expectedPageCount <= 0) {
+                return@withContext ProtectResult.Error(
+                    ProtectError.INVALID_OR_CORRUPTED_PDF,
+                    "PDF document contains no readable pages."
+                )
+            }
+
+            coroutineContext.ensureActive()
+
+            if (doc.isEncrypted) {
+                doc.isAllSecurityToBeRemoved = false
+            }
+
+            val permissions = AccessPermission().apply {
+                setCanPrint(allowPrinting)
+                setCanExtractContent(allowCopy)
+            }
+            val effectiveOwnerPassword = if (ownerPassword.isBlank()) userPassword else ownerPassword
+            val policy = StandardProtectionPolicy(
+                effectiveOwnerPassword,
+                userPassword,
+                permissions
+            ).apply {
+                encryptionKeyLength = 128
+            }
+            doc.protect(policy)
+
+            try {
+                doc.save(tempEncrypted)
+            } catch (e: Throwable) {
+                tempEncrypted.delete()
+                return@withContext ProtectResult.Error(
+                    ProtectError.OUTPUT_WRITE_FAILED,
+                    "Failed to write encrypted PDF output: ${e.localizedMessage ?: "Storage error"}"
+                )
+            } finally {
+                try {
+                    doc.close()
+                } catch (_: Exception) {
+                }
+                doc = null
+            }
+
+            coroutineContext.ensureActive()
+
+            val validator = outputValidator ?: ::validateProtectedPdfFile
+            if (!validator(context, tempEncrypted, userPassword, expectedPageCount)) {
+                tempEncrypted.delete()
+                return@withContext ProtectResult.Error(
+                    ProtectError.OUTPUT_VALIDATION_FAILED,
+                    "Generated encrypted PDF failed verification."
+                )
+            }
+
+            coroutineContext.ensureActive()
+
+            if (inPlace) {
+                val backupBytes = pdfFile.readBytes()
+                val replaced = replaceFileSafelyWithBackup(tempEncrypted, pdfFile)
+                tempEncrypted.delete()
+                if (!replaced) {
+                    return@withContext ProtectResult.Error(
+                        ProtectError.OUTPUT_WRITE_FAILED,
+                        "Failed to safely replace original PDF file. The original file has been preserved."
+                    )
+                }
+                if (!validator(context, pdfFile, userPassword, expectedPageCount)) {
+                    try {
+                        FileOutputStream(pdfFile).use { it.write(backupBytes) }
+                    } catch (_: Exception) {
+                    }
+                    return@withContext ProtectResult.Error(
+                        ProtectError.OUTPUT_VALIDATION_FAILED,
+                        "Post-save validation failed. Original file was restored."
+                    )
+                }
+                return@withContext ProtectResult.Success(
+                    file = pdfFile,
+                    pageCount = expectedPageCount,
+                    fileSizeBytes = pdfFile.length(),
+                    replacedOriginal = true
+                )
+            } else {
+                if ((outputDir.exists() && !outputDir.isDirectory) || (!outputDir.exists() && !outputDir.mkdirs()) || !outputDir.canWrite()) {
+                    tempEncrypted.delete()
+                    return@withContext ProtectResult.Error(
+                        ProtectError.OUTPUT_WRITE_FAILED,
+                        "Destination directory is unavailable or read-only."
+                    )
+                }
+
+                val desiredName = outputName.trim().ifBlank { "${pdfFile.nameWithoutExtension}_protected.pdf" }
+                val finalOutputFile = getUniqueOutputFile(outputDir, desiredName)
+
+                try {
+                    copyOrMoveFile(tempEncrypted, finalOutputFile)
+                } catch (e: Throwable) {
+                    finalOutputFile.delete()
+                    tempEncrypted.delete()
+                    return@withContext ProtectResult.Error(
+                        ProtectError.OUTPUT_WRITE_FAILED,
+                        "Failed to save protected PDF to destination: ${e.localizedMessage ?: "I/O error"}"
+                    )
+                }
+
+                if (!validator(context, finalOutputFile, userPassword, expectedPageCount)) {
+                    finalOutputFile.delete()
+                    return@withContext ProtectResult.Error(
+                        ProtectError.OUTPUT_VALIDATION_FAILED,
+                        "Saved protected PDF failed final verification."
+                    )
+                }
+
+                return@withContext ProtectResult.Success(
+                    file = finalOutputFile,
+                    pageCount = expectedPageCount,
+                    fileSizeBytes = finalOutputFile.length(),
+                    replacedOriginal = false
+                )
+            }
+        } catch (e: CancellationException) {
+            tempEncrypted.delete()
+            throw e
+        } catch (e: Throwable) {
+            tempEncrypted.delete()
+            ProtectResult.Error(
+                ProtectError.OUTPUT_WRITE_FAILED,
+                "Unexpected error while encrypting PDF: ${e.localizedMessage ?: "Unknown error"}"
+            )
+        } finally {
+            try {
+                doc?.close()
+            } catch (_: Exception) {
+            }
+            tempEncrypted.delete()
+        }
+    }
+
+    /**
      * Real PDF Encryption using PDFBox StandardProtectionPolicy (128-bit AES / Password Protection)
      */
     suspend fun protectPdf(
@@ -1473,56 +1840,19 @@ object PdfEngine {
         outputName: String = "Protected_${System.currentTimeMillis()}.pdf",
         inPlace: Boolean = false
     ): File? = withContext(Dispatchers.IO) {
-        if (!pdfFile.exists() || pdfFile.length() == 0L || userPassword.isBlank()) return@withContext null
-        val tempEncrypted = File(context.cacheDir, "temp_encrypt_${System.nanoTime()}.pdf")
-        var doc: PDDocument? = null
-        try {
-            PDFBoxResourceLoader.init(context)
-            doc = PDDocument.load(pdfFile)
-
-            val permissions = AccessPermission()
-            val policy = StandardProtectionPolicy(
-                if (ownerPassword.isBlank()) userPassword else ownerPassword,
-                userPassword,
-                permissions
+        when (
+            val result = protectPdfDetailed(
+                context = context,
+                pdfFile = pdfFile,
+                userPassword = userPassword,
+                confirmPassword = userPassword,
+                ownerPassword = ownerPassword,
+                outputName = outputName,
+                inPlace = inPlace
             )
-            policy.encryptionKeyLength = 128
-            doc.protect(policy)
-
-            doc.save(tempEncrypted)
-            doc.close()
-            doc = null
-
-            val isEncrypted = checkPasswordProtected(context, tempEncrypted)
-            val isPasswordValid = verifyPdfPassword(context, tempEncrypted, userPassword)
-
-            if (!isEncrypted || !isPasswordValid) {
-                tempEncrypted.delete()
-                return@withContext null
-            }
-
-            if (inPlace && pdfFile.canWrite()) {
-                val replaced = replaceFileSafelyWithBackup(tempEncrypted, pdfFile)
-                tempEncrypted.delete()
-                return@withContext if (replaced) pdfFile else null
-            } else {
-                val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-                val outputFile = getUniqueOutputFile(outputDir, outputName)
-                copyOrMoveFile(tempEncrypted, outputFile)
-                return@withContext if (outputFile.exists() && outputFile.length() > 0) outputFile else null
-            }
-        } catch (e: CancellationException) {
-            tempEncrypted.delete()
-            throw e
-        } catch (e: Exception) {
-            tempEncrypted.delete()
-            null
-        } finally {
-            try {
-                doc?.close()
-            } catch (_: Exception) {
-            }
-            tempEncrypted.delete()
+        ) {
+            is ProtectResult.Success -> result.file
+            is ProtectResult.Error -> null
         }
     }
 
@@ -2330,8 +2660,111 @@ object PdfEngine {
         }
         pdfDocument.close()
 
+        if (!sampleFile.exists() || sampleFile.length() == 0L || !hasPdfHeader(sampleFile)) {
+            PDFBoxResourceLoader.init(context)
+            PDDocument().use { doc ->
+                val p1 = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+                val p2 = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+                doc.addPage(p1)
+                doc.addPage(p2)
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, p1).use { cs ->
+                    cs.beginText()
+                    cs.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD, 18f)
+                    cs.newLineAtOffset(40f, 760f)
+                    cs.showText("PDF Master - Starter Guide")
+                    cs.endText()
+                }
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, p2).use { cs ->
+                    cs.beginText()
+                    cs.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 14f)
+                    cs.newLineAtOffset(40f, 760f)
+                    cs.showText("Page 2 - Sample Data Sheet")
+                    cs.endText()
+                }
+                doc.save(sampleFile)
+            }
+        }
+
         sampleFile
     }
+
+    /**
+     * Checks whether [file] is the auto-generated starter sample guide PDF.
+     */
+    fun isStarterSamplePdf(file: File?): Boolean {
+        if (file == null) return false
+        val name = file.name
+        return name.equals("Welcome_PDF_Master.pdf", ignoreCase = true) ||
+            name.equals("PDF_Master_Starter_Guide.pdf", ignoreCase = true)
+    }
+
+    // =========================================================================
+    // Office (Word .docx / Excel .xlsx / PowerPoint .pptx) Local Offline Conversions
+    // =========================================================================
+
+    suspend fun inspectOfficeSource(
+        context: Context,
+        uri: Uri,
+        expectedType: OfficeToPdfConverter.OfficeDocumentType
+    ): OfficeToPdfConverter.OfficeSourceInspection =
+        OfficeToPdfConverter.inspectOfficeSource(context, uri, expectedType)
+
+    suspend fun convertOfficeToPdfDetailed(
+        context: Context,
+        uri: Uri,
+        expectedType: OfficeToPdfConverter.OfficeDocumentType,
+        outputName: String,
+        outputDir: File = File(context.filesDir, "output_pdfs")
+    ): OfficeToPdfConverter.OfficeConversionResult =
+        OfficeToPdfConverter.convertOfficeToPdfDetailed(
+            context = context,
+            uri = uri,
+            expectedType = expectedType,
+            outputName = outputName,
+            outputDir = outputDir
+        )
+
+    suspend fun convertDocxToPdfDetailed(
+        context: Context,
+        uri: Uri,
+        outputName: String = "Word_Document.pdf",
+        outputDir: File = File(context.filesDir, "output_pdfs")
+    ): OfficeToPdfConverter.OfficeConversionResult =
+        OfficeToPdfConverter.convertOfficeToPdfDetailed(
+            context = context,
+            uri = uri,
+            expectedType = OfficeToPdfConverter.OfficeDocumentType.WORD_DOCX,
+            outputName = outputName,
+            outputDir = outputDir
+        )
+
+    suspend fun convertXlsxToPdfDetailed(
+        context: Context,
+        uri: Uri,
+        outputName: String = "Excel_Workbook.pdf",
+        outputDir: File = File(context.filesDir, "output_pdfs")
+    ): OfficeToPdfConverter.OfficeConversionResult =
+        OfficeToPdfConverter.convertOfficeToPdfDetailed(
+            context = context,
+            uri = uri,
+            expectedType = OfficeToPdfConverter.OfficeDocumentType.EXCEL_XLSX,
+            outputName = outputName,
+            outputDir = outputDir
+        )
+
+    suspend fun convertPptxToPdfDetailed(
+        context: Context,
+        uri: Uri,
+        outputName: String = "PowerPoint_Presentation.pdf",
+        outputDir: File = File(context.filesDir, "output_pdfs")
+    ): OfficeToPdfConverter.OfficeConversionResult =
+        OfficeToPdfConverter.convertOfficeToPdfDetailed(
+            context = context,
+            uri = uri,
+            expectedType = OfficeToPdfConverter.OfficeDocumentType.POWERPOINT_PPTX,
+            outputName = outputName,
+            outputDir = outputDir
+        )
 
     private fun getFileFromUri(context: Context, uri: Uri): File? {
         val scheme = uri.scheme

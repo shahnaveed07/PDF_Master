@@ -14,6 +14,7 @@ import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.dsc.pdfmaster.data.model.PdfTool
 import com.dsc.pdfmaster.data.model.PdfToolType
 import com.dsc.pdfmaster.data.repository.PdfRepository
+import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -108,6 +109,26 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     private val _selectedPdfFile = MutableStateFlow<File?>(null)
     val selectedPdfFile: StateFlow<File?> = _selectedPdfFile.asStateFlow()
 
+    // Tracks whether _selectedPdfFile was deliberately chosen by the user (vs auto-created starter sample)
+    private val _isPdfExplicitlySelected = MutableStateFlow(false)
+    val isPdfExplicitlySelected: StateFlow<Boolean> = _isPdfExplicitlySelected.asStateFlow()
+
+    // Dedicated Protect PDF state (never pre-populated with starter sample PDF)
+    private val _protectSourcePdf = MutableStateFlow<File?>(null)
+    val protectSourcePdf: StateFlow<File?> = _protectSourcePdf.asStateFlow()
+
+    private val _protectPdfSecurityState = MutableStateFlow<PdfEngine.PdfSecurityState?>(null)
+    val protectPdfSecurityState: StateFlow<PdfEngine.PdfSecurityState?> = _protectPdfSecurityState.asStateFlow()
+
+    private val _protectPdfRequiresCurrentPassword = MutableStateFlow(false)
+    val protectPdfRequiresCurrentPassword: StateFlow<Boolean> = _protectPdfRequiresCurrentPassword.asStateFlow()
+
+    private val _protectPdfErrorMessage = MutableStateFlow<String?>(null)
+    val protectPdfErrorMessage: StateFlow<String?> = _protectPdfErrorMessage.asStateFlow()
+
+    private val _protectResult = MutableStateFlow<PdfEngine.ProtectResult.Success?>(null)
+    val protectResult: StateFlow<PdfEngine.ProtectResult.Success?> = _protectResult.asStateFlow()
+
     // Unprotect (Remove Password) state
     private val _selectedPdfSecurityState = MutableStateFlow<PdfEngine.PdfSecurityState?>(null)
     val selectedPdfSecurityState: StateFlow<PdfEngine.PdfSecurityState?> = _selectedPdfSecurityState.asStateFlow()
@@ -140,11 +161,32 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     private val _conversionSourceTextPreview = MutableStateFlow<String?>(null)
     val conversionSourceTextPreview: StateFlow<String?> = _conversionSourceTextPreview.asStateFlow()
 
+    private val _conversionSourceOfficeUri = MutableStateFlow<Uri?>(null)
+    val conversionSourceOfficeUri: StateFlow<Uri?> = _conversionSourceOfficeUri.asStateFlow()
+
+    private val _conversionSourceOfficeName = MutableStateFlow<String?>(null)
+    val conversionSourceOfficeName: StateFlow<String?> = _conversionSourceOfficeName.asStateFlow()
+
+    private val _conversionSourceOfficeFormat = MutableStateFlow<OfficeToPdfConverter.OfficeDocumentType?>(null)
+    val conversionSourceOfficeFormat: StateFlow<OfficeToPdfConverter.OfficeDocumentType?> = _conversionSourceOfficeFormat.asStateFlow()
+
+    private val _conversionSourceOfficeSummary = MutableStateFlow<String?>(null)
+    val conversionSourceOfficeSummary: StateFlow<String?> = _conversionSourceOfficeSummary.asStateFlow()
+
+    private val _conversionSourceOfficePreview = MutableStateFlow<String?>(null)
+    val conversionSourceOfficePreview: StateFlow<String?> = _conversionSourceOfficePreview.asStateFlow()
+
     private val _conversionOutputFiles = MutableStateFlow<List<File>>(emptyList())
     val conversionOutputFiles: StateFlow<List<File>> = _conversionOutputFiles.asStateFlow()
 
     private val _conversionExtractedText = MutableStateFlow<String?>(null)
     val conversionExtractedText: StateFlow<String?> = _conversionExtractedText.asStateFlow()
+
+    private val _conversionResultSummary = MutableStateFlow<String?>(null)
+    val conversionResultSummary: StateFlow<String?> = _conversionResultSummary.asStateFlow()
+
+    private val _conversionLayoutDisclosure = MutableStateFlow<String?>(null)
+    val conversionLayoutDisclosure: StateFlow<String?> = _conversionLayoutDisclosure.asStateFlow()
 
     private val _conversionErrorMessage = MutableStateFlow<String?>(null)
     val conversionErrorMessage: StateFlow<String?> = _conversionErrorMessage.asStateFlow()
@@ -195,13 +237,19 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             val sample = repository.ensureStarterSamplePdf()
             if (_selectedPdfFile.value == null) {
                 _selectedPdfFile.value = sample
+                _isPdfExplicitlySelected.value = false
             }
         }
     }
 
+    fun isStarterSamplePdf(file: File?): Boolean {
+        return file?.name == "Welcome_PDF_Master.pdf" || file?.name == "PDF_Master_Welcome_Guide.pdf"
+    }
+
     fun navigateTo(route: ScreenRoute) {
         _isProcessing.value = false
-        if (_currentRoute.value == route) return
+        val previousRoute = _currentRoute.value
+        if (previousRoute == route) return
 
         if (route == ScreenRoute.CONVERT_PDF) {
             resetConversionSession()
@@ -210,6 +258,20 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             _unprotectErrorMessage.value = null
             _unprotectResult.value = null
             refreshSelectedPdfSecurityState()
+        }
+        if (route == ScreenRoute.PASSWORD_PROTECT) {
+            _protectPdfErrorMessage.value = null
+            _protectResult.value = null
+            val currentFile = _selectedPdfFile.value
+            if (previousRoute == ScreenRoute.PDF_VIEWER && currentFile != null) {
+                selectProtectSourcePdf(currentFile)
+            } else if (_isPdfExplicitlySelected.value && currentFile != null) {
+                selectProtectSourcePdf(currentFile)
+            } else if (_protectSourcePdf.value == null) {
+                _protectSourcePdf.value = null
+                _protectPdfSecurityState.value = null
+                _protectPdfRequiresCurrentPassword.value = false
+            }
         }
 
         if (route in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
@@ -259,6 +321,18 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         _userNotification.value = null
     }
 
+    fun showNotification(message: String) {
+        _userNotification.value = message
+    }
+
+    fun clearConversionState() {
+        _conversionErrorMessage.value = null
+        _conversionOutputFiles.value = emptyList()
+        _conversionExtractedText.value = null
+        _conversionResultSummary.value = null
+        _conversionLayoutDisclosure.value = null
+    }
+
     fun clearUnprotectFeedback() {
         _unprotectErrorMessage.value = null
         _unprotectResult.value = null
@@ -277,6 +351,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun openPdfInViewer(file: File) {
         _selectedPdfFile.value = file
+        _isPdfExplicitlySelected.value = true
         viewModelScope.launch {
             repository.registerPdfFile(file)
         }
@@ -288,6 +363,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             val file = repository.getOrCreateManagedFileFromUri(uri)
             if (file != null) {
                 _selectedPdfFile.value = file
+                _isPdfExplicitlySelected.value = true
                 _unprotectErrorMessage.value = null
                 _unprotectResult.value = null
                 _selectedPdfSecurityState.value = PdfEngine.inspectPdfSecurity(getApplication(), file)
@@ -313,6 +389,10 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             _userNotification.value = "File deleted successfully"
             if (_selectedPdfFile.value?.absolutePath == filePath) {
                 _selectedPdfFile.value = null
+                _isPdfExplicitlySelected.value = false
+            }
+            if (_protectSourcePdf.value?.absolutePath == filePath) {
+                _protectSourcePdf.value = null
             }
         }
     }
@@ -323,6 +403,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             _userNotification.value = "Removed from Recent Documents"
             if (_selectedPdfFile.value?.absolutePath == filePath) {
                 _selectedPdfFile.value = null
+                _isPdfExplicitlySelected.value = false
             }
         }
     }
@@ -332,6 +413,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             val renamed = repository.renamePdf(file, newName)
             if (renamed != null) {
                 _selectedPdfFile.value = renamed
+                _isPdfExplicitlySelected.value = true
                 _userNotification.value = "Renamed to ${renamed.name}"
             } else {
                 _userNotification.value = "Failed to rename file"
@@ -341,6 +423,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setSelectedPdfFile(file: File) {
         _selectedPdfFile.value = file
+        _isPdfExplicitlySelected.value = true
         _unprotectErrorMessage.value = null
         _unprotectResult.value = null
         refreshSelectedPdfSecurityState(file)
@@ -612,24 +695,149 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Password Protect PDF
-    fun executeProtectPdf(file: File, password: String, outputName: String) {
-        if (_isProcessing.value || password.isBlank()) return
+    fun clearProtectFeedback() {
+        _protectPdfErrorMessage.value = null
+        _protectResult.value = null
+    }
+
+    fun selectProtectSourcePdf(file: File?) {
+        _protectPdfErrorMessage.value = null
+        _protectResult.value = null
+        if (file == null) {
+            _protectSourcePdf.value = null
+            _protectPdfSecurityState.value = null
+            _protectPdfRequiresCurrentPassword.value = false
+            return
+        }
+        viewModelScope.launch {
+            if (!file.exists() || file.length() == 0L || !PdfEngine.hasPdfHeader(file)) {
+                _protectSourcePdf.value = null
+                _protectPdfSecurityState.value = PdfEngine.PdfSecurityState.InvalidOrCorrupted("Selected file is not a valid PDF document.")
+                _protectPdfErrorMessage.value = "Selected file is not a valid PDF document."
+                return@launch
+            }
+            _protectSourcePdf.value = file
+            val secState = PdfEngine.inspectPdfSecurity(getApplication(), file)
+            _protectPdfSecurityState.value = secState
+            _protectPdfRequiresCurrentPassword.value =
+                secState is PdfEngine.PdfSecurityState.UserPasswordRequired ||
+                    secState is PdfEngine.PdfSecurityState.OwnerPasswordRestricted
+            when (secState) {
+                is PdfEngine.PdfSecurityState.InvalidOrCorrupted -> {
+                    _protectPdfErrorMessage.value = secState.message
+                }
+                is PdfEngine.PdfSecurityState.UnsupportedEncryption -> {
+                    _protectPdfErrorMessage.value = secState.message
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun selectProtectSourcePdfFromUri(uri: Uri) {
+        viewModelScope.launch {
+            _protectPdfErrorMessage.value = null
+            _protectResult.value = null
+            val file = repository.getOrCreateManagedFileFromUri(uri)
+            if (file != null && file.exists() && PdfEngine.hasPdfHeader(file)) {
+                _selectedPdfFile.value = file
+                _isPdfExplicitlySelected.value = true
+                repository.registerPdfFile(file)
+                selectProtectSourcePdf(file)
+            } else {
+                _protectSourcePdf.value = null
+                _protectPdfSecurityState.value = PdfEngine.PdfSecurityState.InvalidOrCorrupted("Selected file is not a valid PDF document.")
+                val msg = "Selected file is not a valid PDF document."
+                _protectPdfErrorMessage.value = msg
+                _userNotification.value = msg
+            }
+        }
+    }
+
+    fun executeProtectPdf(
+        file: File? = _protectSourcePdf.value,
+        password: String,
+        outputName: String = "",
+        confirmPassword: String = password,
+        currentPassword: String? = null,
+        ownerPassword: String? = null,
+        allowPrinting: Boolean = true,
+        allowCopy: Boolean = true,
+        replaceOriginal: Boolean = false
+    ) {
+        if (_isProcessing.value) return
+        val targetFile = file ?: _protectSourcePdf.value
+        if (targetFile == null || (_protectSourcePdf.value == null && !_isPdfExplicitlySelected.value)) {
+            val msg = "Please select a PDF document to protect."
+            _protectPdfErrorMessage.value = msg
+            _userNotification.value = msg
+            return
+        }
+        if (password.isBlank()) {
+            val msg = "Password cannot be empty."
+            _protectPdfErrorMessage.value = msg
+            _userNotification.value = msg
+            return
+        }
+        if (password != confirmPassword) {
+            val msg = "Passwords do not match. Please confirm your password."
+            _protectPdfErrorMessage.value = msg
+            _userNotification.value = msg
+            return
+        }
+
         activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
-            _processingMessage.value = "Encrypting & locking PDF..."
+            _protectPdfErrorMessage.value = null
+            _protectResult.value = null
+            _processingMessage.value = "Applying 256-bit AES encryption & verifying..."
             try {
-                val result = repository.protectPdf(file, password, outputName)
-                if (result != null) {
-                    _selectedPdfFile.value = result
-                    _userNotification.value = "Document encrypted as ${result.name}!"
-                    navigateTo(ScreenRoute.PDF_VIEWER)
-                } else {
-                    _userNotification.value = "Failed to encrypt PDF."
+                val desiredOutputName = outputName.trim().ifBlank {
+                    "${targetFile.nameWithoutExtension}_protected.pdf"
+                }
+                val result = repository.protectPdfDetailed(
+                    pdfFile = targetFile,
+                    password = password,
+                    confirmPassword = confirmPassword,
+                    ownerPassword = ownerPassword,
+                    currentPassword = currentPassword,
+                    allowPrinting = allowPrinting,
+                    allowCopy = allowCopy,
+                    outputName = desiredOutputName,
+                    replaceOriginal = replaceOriginal
+                )
+                when (result) {
+                    is PdfEngine.ProtectResult.Success -> {
+                        _protectResult.value = result
+                        if (replaceOriginal) {
+                            _protectSourcePdf.value = result.file
+                            _protectPdfSecurityState.value = PdfEngine.PdfSecurityState.UserPasswordRequired
+                            _protectPdfRequiresCurrentPassword.value = true
+                        }
+                        _userNotification.value = if (result.replacedOriginal) {
+                            "Original PDF protected in-place: ${result.file.name}"
+                        } else {
+                            "Document encrypted as ${result.file.name}!"
+                        }
+                    }
+                    is PdfEngine.ProtectResult.Error -> {
+                        if (result.error == PdfEngine.ProtectError.ALREADY_ENCRYPTED ||
+                            result.error == PdfEngine.ProtectError.OWNER_PASSWORD_REQUIRED ||
+                            result.error == PdfEngine.ProtectError.INCORRECT_CURRENT_PASSWORD
+                        ) {
+                            _protectPdfRequiresCurrentPassword.value = true
+                        }
+                        _protectPdfErrorMessage.value = result.message
+                        _userNotification.value = result.message
+                    }
                 }
             } catch (e: CancellationException) {
+                _protectPdfErrorMessage.value = "Encryption cancelled. Original file is unchanged."
                 _userNotification.value = "Encryption cancelled"
             } catch (e: Exception) {
-                _userNotification.value = "Failed to encrypt PDF."
+                val msg = "Failed to encrypt PDF: ${e.localizedMessage ?: "Unexpected error"}"
+                _protectPdfErrorMessage.value = msg
+                _userNotification.value = msg
             } finally {
                 _isProcessing.value = false
             }
@@ -665,6 +873,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 when (result) {
                     is PdfEngine.UnprotectResult.Success -> {
                         _selectedPdfFile.value = result.file
+                        _isPdfExplicitlySelected.value = true
                         _unprotectResult.value = result
                         _selectedPdfSecurityState.value = PdfEngine.PdfSecurityState.Unencrypted(result.pageCount)
                         _userNotification.value = "Password removed: ${result.file.name}"
@@ -697,8 +906,15 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         _conversionSourceTextUri.value = null
         _conversionSourceTextName.value = null
         _conversionSourceTextPreview.value = null
+        _conversionSourceOfficeUri.value = null
+        _conversionSourceOfficeName.value = null
+        _conversionSourceOfficeFormat.value = null
+        _conversionSourceOfficeSummary.value = null
+        _conversionSourceOfficePreview.value = null
         _conversionOutputFiles.value = emptyList()
         _conversionExtractedText.value = null
+        _conversionResultSummary.value = null
+        _conversionLayoutDisclosure.value = null
         _conversionErrorMessage.value = null
     }
 
@@ -967,6 +1183,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 if (pdfFile != null) {
                     _conversionOutputFiles.value = listOf(pdfFile)
                     _selectedPdfFile.value = pdfFile
+                    _isPdfExplicitlySelected.value = true
                     _userNotification.value = "TXT converted to PDF: ${pdfFile.name}"
                 } else {
                     val msg = "Failed to convert TXT file to PDF. Ensure the file contains valid text."
@@ -978,6 +1195,102 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 _userNotification.value = "TXT to PDF conversion cancelled"
             } catch (e: Exception) {
                 val msg = "Failed to convert TXT file to PDF"
+                _conversionErrorMessage.value = msg
+                _userNotification.value = msg
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun selectConversionOfficeFileFromUri(
+        uri: Uri,
+        expectedType: OfficeToPdfConverter.OfficeDocumentType? = null
+    ) {
+        val targetType = expectedType ?: OfficeToPdfConverter.OfficeDocumentType.WORD_DOCX
+        viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Inspecting ${targetType.label} document..."
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            _conversionResultSummary.value = null
+            _conversionLayoutDisclosure.value = null
+            try {
+                val displayName = resolveDisplayName(
+                    uri,
+                    when (targetType) {
+                        OfficeToPdfConverter.OfficeDocumentType.WORD_DOCX -> "document.docx"
+                        OfficeToPdfConverter.OfficeDocumentType.EXCEL_XLSX -> "spreadsheet.xlsx"
+                        OfficeToPdfConverter.OfficeDocumentType.POWERPOINT_PPTX -> "presentation.pptx"
+                    }
+                )
+                val inspection = repository.inspectOfficeSource(uri, targetType)
+                if (inspection.isValid) {
+                    _conversionSourceOfficeUri.value = uri
+                    _conversionSourceOfficeName.value = displayName
+                    _conversionSourceOfficeFormat.value = inspection.detectedType ?: targetType
+                    _conversionSourceOfficeSummary.value = inspection.previewSummary
+                    _conversionSourceOfficePreview.value = inspection.previewSummary
+                } else {
+                    val errMsg = inspection.errorMessage ?: "Selected file is not a valid ${targetType.label} document."
+                    _conversionSourceOfficeUri.value = null
+                    _conversionSourceOfficeName.value = null
+                    _conversionSourceOfficeFormat.value = null
+                    _conversionSourceOfficeSummary.value = null
+                    _conversionSourceOfficePreview.value = null
+                    _conversionErrorMessage.value = errMsg
+                    _userNotification.value = errMsg
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun executeConvertOfficeToPdf(
+        uri: Uri,
+        expectedType: OfficeToPdfConverter.OfficeDocumentType? = _conversionSourceOfficeFormat.value,
+        outputName: String
+    ) {
+        if (_isProcessing.value) return
+        val targetType = expectedType
+            ?: _conversionSourceOfficeFormat.value
+            ?: OfficeToPdfConverter.OfficeDocumentType.WORD_DOCX
+        activeOperationJob = viewModelScope.launch {
+            _isProcessing.value = true
+            _conversionErrorMessage.value = null
+            _conversionOutputFiles.value = emptyList()
+            _conversionResultSummary.value = null
+            _conversionLayoutDisclosure.value = null
+            val formatLabel = targetType.label
+            _processingMessage.value = "Converting $formatLabel to PDF..."
+            try {
+                val fallbackBase = (_conversionSourceOfficeName.value ?: "Office_Document").substringBeforeLast('.')
+                val desiredName = outputName.trim().ifBlank { "$fallbackBase.pdf" }
+                val result = repository.convertOfficeToPdfDetailed(
+                    uri = uri,
+                    expectedType = targetType,
+                    outputName = desiredName
+                )
+                when (result) {
+                    is OfficeToPdfConverter.OfficeConversionResult.Success -> {
+                        _conversionOutputFiles.value = listOf(result.file)
+                        _conversionResultSummary.value = "${result.pageCount} PDF page(s) • ${result.summary}"
+                        _conversionLayoutDisclosure.value = result.layoutDisclosure
+                        _selectedPdfFile.value = result.file
+                        _isPdfExplicitlySelected.value = true
+                        _userNotification.value = "Converted $formatLabel to ${result.file.name} (${result.pageCount} pages)"
+                    }
+                    is OfficeToPdfConverter.OfficeConversionResult.Error -> {
+                        _conversionErrorMessage.value = result.message
+                        _userNotification.value = result.message
+                    }
+                }
+            } catch (e: CancellationException) {
+                _conversionErrorMessage.value = "Office conversion cancelled."
+                _userNotification.value = "Office conversion cancelled"
+            } catch (e: Exception) {
+                val msg = "Failed to convert $formatLabel to PDF"
                 _conversionErrorMessage.value = msg
                 _userNotification.value = msg
             } finally {
