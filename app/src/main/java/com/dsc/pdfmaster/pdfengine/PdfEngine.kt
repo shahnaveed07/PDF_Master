@@ -16,10 +16,12 @@ import android.os.ParcelFileDescriptor
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.encryption.PDEncryption
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
@@ -62,18 +64,47 @@ object PdfEngine {
         UNSUPPORTED_ENCRYPTION,
         EMPTY_OR_BLANK_PASSWORD,
         PASSWORD_CONFIRMATION_MISMATCH,
+        INVALID_OWNER_PASSWORD_CONFIGURATION,
         OUTPUT_WRITE_FAILED,
         OUTPUT_VALIDATION_FAILED,
         REPLACE_NOT_PERMITTED,
         CANCELLED
     }
 
+    data class PdfEncryptionDetails(
+        val isEncrypted: Boolean,
+        val filter: String?,
+        val version: Int,
+        val revision: Int,
+        val keyLengthBits: Int,
+        val cryptFilterMethod: String?,
+        val streamFilterName: String?,
+        val stringFilterName: String?,
+        val isAes: Boolean,
+        val algorithmDescription: String,
+        val isOwnerAuthorized: Boolean,
+        val isReadOnlyPermissions: Boolean,
+        val canPrint: Boolean,
+        val canPrintFaithful: Boolean,
+        val canExtractContent: Boolean,
+        val canExtractForAccessibility: Boolean,
+        val canModify: Boolean
+    )
+
     sealed class ProtectResult {
         data class Success(
             val file: File,
             val pageCount: Int,
             val fileSizeBytes: Long,
-            val replacedOriginal: Boolean = false
+            val replacedOriginal: Boolean = false,
+            val encryptionAlgorithm: String = "256-bit AES",
+            val keyLengthBits: Int = 256,
+            val encryptionVersion: Int = 5,
+            val encryptionRevision: Int = 6,
+            val cryptFilterMethod: String = "AESV3",
+            val allowPrinting: Boolean = true,
+            val allowCopy: Boolean = true,
+            val hasDistinctOwnerPassword: Boolean = false
         ) : ProtectResult()
 
         data class Error(
@@ -185,9 +216,13 @@ object PdfEngine {
      */
     fun isInsideDirectory(file: File, directory: File): Boolean {
         return try {
-            val filePath = file.canonicalFile.toPath()
-            val dirPath = directory.canonicalFile.toPath()
-            filePath.startsWith(dirPath)
+            val dirCanon = directory.canonicalFile
+            var current: File? = file.canonicalFile
+            while (current != null) {
+                if (current == dirCanon) return true
+                current = current.parentFile
+            }
+            false
         } catch (e: Exception) {
             false
         }
@@ -225,8 +260,8 @@ object PdfEngine {
                     content.contains("/adbe.pkcs7") ||
                     content.contains("/Unsupported") ||
                     content.contains("/CustomSecurity") ||
-                    Regex("/V\\s+[5-9]").containsMatchIn(content) ||
-                    Regex("/R\\s+[6-9]").containsMatchIn(content)
+                    Regex("/V\\s+[6-9]").containsMatchIn(content) ||
+                    Regex("/R\\s+[7-9]").containsMatchIn(content)
                 ) {
                     return true
                 }
@@ -1409,15 +1444,18 @@ object PdfEngine {
 
     private fun copyOrMoveFile(source: File, target: File) {
         try {
-            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        } catch (e: Exception) {
-            FileOutputStream(target).use { fos ->
-                FileInputStream(source).use { fis ->
-                    fis.copyTo(fos)
-                }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                return
             }
-            source.delete()
+        } catch (_: Exception) {
         }
+        FileOutputStream(target).use { fos ->
+            FileInputStream(source).use { fis ->
+                fis.copyTo(fos)
+            }
+        }
+        source.delete()
     }
 
     private fun replaceFileSafelyWithBackup(validatedTempFile: File, targetFile: File): Boolean {
@@ -1455,19 +1493,31 @@ object PdfEngine {
             }
 
             // 3. Atomically replace original with staged file
-            try {
-                Files.move(
-                    stagedFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            } catch (e: Exception) {
-                Files.move(
-                    stagedFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                try {
+                    Files.move(
+                        stagedFile.toPath(),
+                        targetFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (e: Exception) {
+                    Files.move(
+                        stagedFile.toPath(),
+                        targetFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                }
+            } else {
+                if (!stagedFile.renameTo(targetFile)) {
+                    FileOutputStream(targetFile).use { fos ->
+                        FileInputStream(stagedFile).use { fis ->
+                            fis.copyTo(fos)
+                        }
+                        fos.fd.sync()
+                    }
+                    stagedFile.delete()
+                }
             }
 
             backupFile.delete()
@@ -1477,11 +1527,20 @@ object PdfEngine {
             // Restore original from backup if anything went wrong
             if (backupFile.exists() && backupFile.length() > 0) {
                 try {
-                    Files.move(
-                        backupFile.toPath(),
-                        targetFile.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING
-                    )
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        Files.move(
+                            backupFile.toPath(),
+                            targetFile.toPath(),
+                            StandardCopyOption.REPLACE_EXISTING
+                        )
+                    } else {
+                        FileOutputStream(targetFile).use { fos ->
+                            FileInputStream(backupFile).use { fis ->
+                                fis.copyTo(fos)
+                            }
+                            fos.fd.sync()
+                        }
+                    }
                 } catch (_: Exception) {
                 }
             }
@@ -1498,6 +1557,98 @@ object PdfEngine {
      * 3. Cannot be opened with an incorrect password.
      * 4. Opens cleanly with [expectedPassword], reports `isEncrypted == true`,
      *    and preserves all [expectedPageCount] pages.
+     */
+    /**
+     * Inspects the actual PDFBox [PDEncryption], [com.tom_roush.pdfbox.pdmodel.encryption.PDCryptFilterDictionary],
+     * and [AccessPermission] dictionary metadata written in an encrypted PDF file when opened with [password].
+     */
+    fun inspectEncryptionDetails(
+        context: Context,
+        file: File,
+        password: String
+    ): PdfEncryptionDetails? {
+        if (!file.exists() || !file.isFile || file.length() == 0L || !hasPdfHeader(file)) {
+            return null
+        }
+        return try {
+            PDFBoxResourceLoader.init(context)
+            PDDocument.load(file, password).use { doc ->
+                val enc: PDEncryption? = doc.encryption
+                val ap: AccessPermission? = doc.currentAccessPermission
+                if (!doc.isEncrypted || enc == null || ap == null) {
+                    return PdfEncryptionDetails(
+                        isEncrypted = false,
+                        filter = null,
+                        version = 0,
+                        revision = 0,
+                        keyLengthBits = 0,
+                        cryptFilterMethod = null,
+                        streamFilterName = null,
+                        stringFilterName = null,
+                        isAes = false,
+                        algorithmDescription = "Unencrypted",
+                        isOwnerAuthorized = true,
+                        isReadOnlyPermissions = false,
+                        canPrint = true,
+                        canPrintFaithful = true,
+                        canExtractContent = true,
+                        canExtractForAccessibility = true,
+                        canModify = true
+                    )
+                }
+                val version = enc.version
+                val revision = enc.revision
+                val rawLength = enc.length
+                val resolvedKeyBits = when {
+                    version == 5 -> 256
+                    rawLength > 0 -> rawLength
+                    version == 1 -> 40
+                    else -> 128
+                }
+                val stdCf = enc.stdCryptFilterDictionary ?: enc.defaultCryptFilterDictionary
+                val cfmName: COSName? = stdCf?.cryptFilterMethod
+                val cfm = cfmName?.name
+                val stmF = enc.streamFilterName?.name
+                val strF = enc.stringFilterName?.name
+                val isAes = cfmName == COSName.AESV3 || cfmName == COSName.AESV2
+                val algoDesc = when {
+                    cfmName == COSName.AESV3 && resolvedKeyBits == 256 -> "256-bit AES"
+                    cfmName == COSName.AESV2 && resolvedKeyBits == 128 -> "128-bit AES"
+                    !isAes && resolvedKeyBits > 0 -> "$resolvedKeyBits-bit RC4"
+                    else -> "Encrypted PDF"
+                }
+                PdfEncryptionDetails(
+                    isEncrypted = true,
+                    filter = enc.filter,
+                    version = version,
+                    revision = revision,
+                    keyLengthBits = resolvedKeyBits,
+                    cryptFilterMethod = cfm,
+                    streamFilterName = stmF,
+                    stringFilterName = strF,
+                    isAes = isAes,
+                    algorithmDescription = algoDesc,
+                    isOwnerAuthorized = ap.isOwnerPermission,
+                    isReadOnlyPermissions = ap.isReadOnly,
+                    canPrint = ap.canPrint(),
+                    canPrintFaithful = ap.canPrintFaithful(),
+                    canExtractContent = ap.canExtractContent(),
+                    canExtractForAccessibility = ap.canExtractForAccessibility(),
+                    canModify = ap.canModify()
+                )
+            }
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Validates that a protected PDF file:
+     * 1. Exists, is non-empty, and has a valid `%PDF-` header.
+     * 2. Rejects opening with an empty password.
+     * 3. Rejects opening with an incorrect password.
+     * 4. Opens with [expectedPassword], reports `isEncrypted == true`, uses genuine AES encryption
+     *    (`AESV3` or `AESV2`), and preserves all [expectedPageCount] pages.
      */
     fun validateProtectedPdfFile(
         context: Context,
@@ -1536,10 +1687,14 @@ object PdfEngine {
             }
             if (openedWithWrongPassword) return false
 
-            // 3. Opening with the expected password MUST succeed and match expectedPageCount
+            // 3. Opening with the expected password MUST succeed, use AES, and match expectedPageCount
             PDDocument.load(file, expectedPassword).use { doc ->
                 if (!doc.isEncrypted) return false
                 if (doc.numberOfPages != expectedPageCount || doc.numberOfPages <= 0) return false
+                val enc = doc.encryption ?: return false
+                val stdCf = enc.stdCryptFilterDictionary ?: enc.defaultCryptFilterDictionary
+                val cfm = stdCf?.cryptFilterMethod
+                if (cfm != COSName.AESV3 && cfm != COSName.AESV2) return false
                 doc.getPage(0)
                 true
             }
@@ -1548,20 +1703,83 @@ object PdfEngine {
         }
     }
 
+    private fun verifyProtectedPdfMetadataAndPermissions(
+        context: Context,
+        file: File,
+        userPassword: String,
+        ownerPassword: String?,
+        expectedPageCount: Int,
+        expectedKeyLengthBits: Int,
+        expectedAllowPrinting: Boolean,
+        expectedAllowCopy: Boolean
+    ): PdfEncryptionDetails? {
+        val userDetails = inspectEncryptionDetails(context, file, userPassword) ?: return null
+        if (!userDetails.isEncrypted || !userDetails.isAes) return null
+        if (userDetails.keyLengthBits != expectedKeyLengthBits) return null
+        if (expectedKeyLengthBits == 256 && (userDetails.cryptFilterMethod != "AESV3" || userDetails.version != 5 || userDetails.revision != 6)) {
+            return null
+        }
+        if (expectedKeyLengthBits == 128 && (userDetails.cryptFilterMethod != "AESV2" || userDetails.version != 4 || userDetails.revision != 4)) {
+            return null
+        }
+
+        val hasDistinctOwner = !ownerPassword.isNullOrBlank() && ownerPassword != userPassword
+        if (hasDistinctOwner) {
+            // Opening with user password must NOT have owner permissions and must reflect configured flags
+            if (userDetails.isOwnerAuthorized) return null
+            if (!userDetails.isReadOnlyPermissions) return null
+            if (userDetails.canPrint != expectedAllowPrinting) return null
+            if (userDetails.canExtractContent != expectedAllowCopy) return null
+            if (userDetails.canModify) return null
+
+            // Opening with owner password MUST succeed and have full owner permissions
+            val ownerDetails = inspectEncryptionDetails(context, file, ownerPassword!!) ?: return null
+            if (!ownerDetails.isOwnerAuthorized) return null
+            if (ownerDetails.isReadOnlyPermissions) return null
+            if (!ownerDetails.canPrint || !ownerDetails.canExtractContent || !ownerDetails.canModify) return null
+        }
+
+        // Verify page count and readability
+        return try {
+            PDDocument.load(file, userPassword).use { doc ->
+                if (doc.numberOfPages != expectedPageCount) return null
+                doc.getPage(0)
+            }
+            userDetails
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
     /**
      * Detailed PDF Encryption workflow with full source security inspection,
-     * password & confirmation validation, temporary file staging, post-encryption verification,
-     * and safe non-destructive Save as New (default) or atomic Replace Original.
+     * user & owner password separation and confirmation validation, explicit AES configuration
+     * (256-bit AESV3 default, 128-bit AESV2 supported), temporary file staging, post-encryption
+     * metadata/permission verification, and safe non-destructive Save as New (default) or atomic Replace Original.
+     *
+     * Note on PDFBox Android (`com.tom-roush:pdfbox-android:2.0.27.0`) encryption & password behavior:
+     * - Setting `encryptionKeyLength = 256` with `setPreferAES(true)` configures Standard Security Handler
+     *   Version 5, Revision 6 (`AESV3` 256-bit AES-CBC with SHA-256/384/512 key derivation).
+     *   Setting `encryptionKeyLength = 128` with `setPreferAES(true)` configures Version 4, Revision 4 (`AESV2` 128-bit AES).
+     * - Under Revision 6 (`AESV3`), PDFBox normalizes passwords with `SaslPrep.saslPrepStored` and truncates UTF-8
+     *   bytes at 127 bytes per ISO 32000-2. Under Revision 4 (`AESV2`), PDFBox uses Latin-1 (`ISO-8859-1`)
+     *   32-byte padding. Passwords are never trimmed or modified by `PdfEngine`.
+     * - When Opening a PDF, `StandardSecurityHandler` checks `isOwnerPassword` before `isUserPassword`.
+     *   Therefore, enforcing restricted permissions (`allowPrinting = false` or `allowCopy = false`) requires
+     *   a distinct `ownerPassword != userPassword`; otherwise opening with the user password would grant
+     *   full owner permissions.
      */
     suspend fun protectPdfDetailed(
         context: Context,
         pdfFile: File,
         userPassword: String,
         confirmPassword: String = userPassword,
-        ownerPassword: String = userPassword,
+        ownerPassword: String? = null,
+        confirmOwnerPassword: String? = ownerPassword,
         currentPassword: String? = null,
         allowPrinting: Boolean = true,
         allowCopy: Boolean = true,
+        keyLengthBits: Int = 256,
         outputName: String = "${pdfFile.nameWithoutExtension}_protected.pdf",
         inPlace: Boolean = false,
         tempDir: File = context.cacheDir,
@@ -1570,18 +1788,54 @@ object PdfEngine {
     ): ProtectResult = withContext(Dispatchers.IO) {
         coroutineContext.ensureActive()
 
+        if (keyLengthBits != 256 && keyLengthBits != 128) {
+            return@withContext ProtectResult.Error(
+                ProtectError.UNSUPPORTED_ENCRYPTION,
+                "Unsupported AES key length ($keyLengthBits bits). Supported values are 128-bit and 256-bit AES."
+            )
+        }
+
         if (userPassword.isBlank()) {
             return@withContext ProtectResult.Error(
                 ProtectError.EMPTY_OR_BLANK_PASSWORD,
-                "Password cannot be empty or contain only whitespace."
+                "Open password cannot be empty or contain only whitespace."
             )
         }
 
         if (userPassword != confirmPassword) {
             return@withContext ProtectResult.Error(
                 ProtectError.PASSWORD_CONFIRMATION_MISMATCH,
-                "Passwords do not match. Please make sure both password fields are identical."
+                "Open passwords do not match. Please make sure both password fields are identical."
             )
+        }
+
+        val hasRestrictedPermissions = !allowPrinting || !allowCopy
+        if (hasRestrictedPermissions && ownerPassword == null) {
+            return@withContext ProtectResult.Error(
+                ProtectError.INVALID_OWNER_PASSWORD_CONFIGURATION,
+                "A separate Owner Password is required when restricting printing or copying permissions, so opening with the Open Password does not grant owner privileges."
+            )
+        }
+
+        if (ownerPassword != null) {
+            if (ownerPassword.isBlank()) {
+                return@withContext ProtectResult.Error(
+                    ProtectError.EMPTY_OR_BLANK_PASSWORD,
+                    "Owner password cannot be empty or contain only whitespace."
+                )
+            }
+            if (confirmOwnerPassword != null && ownerPassword != confirmOwnerPassword) {
+                return@withContext ProtectResult.Error(
+                    ProtectError.PASSWORD_CONFIRMATION_MISMATCH,
+                    "Owner passwords do not match. Please make sure both owner password fields are identical."
+                )
+            }
+            if (ownerPassword == userPassword) {
+                return@withContext ProtectResult.Error(
+                    ProtectError.INVALID_OWNER_PASSWORD_CONFIGURATION,
+                    "Owner password must be different from the Open password so user and owner permissions remain distinct."
+                )
+            }
         }
 
         if (!pdfFile.exists() || !pdfFile.isFile || pdfFile.length() == 0L) {
@@ -1680,12 +1934,14 @@ object PdfEngine {
                 }
             }
 
-            if (securityState is PdfSecurityState.OwnerPasswordRestricted) {
+            if (securityState is PdfSecurityState.UserPasswordRequired ||
+                securityState is PdfSecurityState.OwnerPasswordRestricted
+            ) {
                 val ap = doc.currentAccessPermission
                 if (ap == null || !ap.isOwnerPermission) {
                     return@withContext ProtectResult.Error(
                         ProtectError.OWNER_PASSWORD_REQUIRED,
-                        "Owner password required: the supplied credential does not authorize modifying security on this PDF."
+                        "Owner password required: the supplied credential only grants user/open access and cannot modify PDF security settings."
                     )
                 }
             }
@@ -1702,19 +1958,31 @@ object PdfEngine {
 
             if (doc.isEncrypted) {
                 doc.isAllSecurityToBeRemoved = false
+                doc.setEncryptionDictionary(PDEncryption())
             }
+
+            val hasDistinctOwnerPassword = ownerPassword != null && ownerPassword != userPassword
+            val effectiveOwnerPassword = ownerPassword ?: userPassword
 
             val permissions = AccessPermission().apply {
                 setCanPrint(allowPrinting)
+                setCanPrintFaithful(allowPrinting)
                 setCanExtractContent(allowCopy)
+                setCanExtractForAccessibility(allowCopy)
+                if (hasDistinctOwnerPassword) {
+                    setCanModify(false)
+                    setCanAssembleDocument(false)
+                    setCanModifyAnnotations(false)
+                }
             }
-            val effectiveOwnerPassword = if (ownerPassword.isBlank()) userPassword else ownerPassword
+
             val policy = StandardProtectionPolicy(
                 effectiveOwnerPassword,
                 userPassword,
                 permissions
             ).apply {
-                encryptionKeyLength = 128
+                encryptionKeyLength = keyLengthBits
+                isPreferAES = true
             }
             doc.protect(policy)
 
@@ -1737,11 +2005,21 @@ object PdfEngine {
             coroutineContext.ensureActive()
 
             val validator = outputValidator ?: ::validateProtectedPdfFile
-            if (!validator(context, tempEncrypted, userPassword, expectedPageCount)) {
+            val verifiedDetails = verifyProtectedPdfMetadataAndPermissions(
+                context = context,
+                file = tempEncrypted,
+                userPassword = userPassword,
+                ownerPassword = ownerPassword,
+                expectedPageCount = expectedPageCount,
+                expectedKeyLengthBits = keyLengthBits,
+                expectedAllowPrinting = allowPrinting,
+                expectedAllowCopy = allowCopy
+            )
+            if (!validator(context, tempEncrypted, userPassword, expectedPageCount) || verifiedDetails == null) {
                 tempEncrypted.delete()
                 return@withContext ProtectResult.Error(
                     ProtectError.OUTPUT_VALIDATION_FAILED,
-                    "Generated encrypted PDF failed verification."
+                    "Generated encrypted PDF failed security and permission verification."
                 )
             }
 
@@ -1757,7 +2035,17 @@ object PdfEngine {
                         "Failed to safely replace original PDF file. The original file has been preserved."
                     )
                 }
-                if (!validator(context, pdfFile, userPassword, expectedPageCount)) {
+                val postReplaceDetails = verifyProtectedPdfMetadataAndPermissions(
+                    context = context,
+                    file = pdfFile,
+                    userPassword = userPassword,
+                    ownerPassword = ownerPassword,
+                    expectedPageCount = expectedPageCount,
+                    expectedKeyLengthBits = keyLengthBits,
+                    expectedAllowPrinting = allowPrinting,
+                    expectedAllowCopy = allowCopy
+                )
+                if (!validator(context, pdfFile, userPassword, expectedPageCount) || postReplaceDetails == null) {
                     try {
                         FileOutputStream(pdfFile).use { it.write(backupBytes) }
                     } catch (_: Exception) {
@@ -1771,7 +2059,15 @@ object PdfEngine {
                     file = pdfFile,
                     pageCount = expectedPageCount,
                     fileSizeBytes = pdfFile.length(),
-                    replacedOriginal = true
+                    replacedOriginal = true,
+                    encryptionAlgorithm = postReplaceDetails.algorithmDescription,
+                    keyLengthBits = postReplaceDetails.keyLengthBits,
+                    encryptionVersion = postReplaceDetails.version,
+                    encryptionRevision = postReplaceDetails.revision,
+                    cryptFilterMethod = postReplaceDetails.cryptFilterMethod ?: "AESV3",
+                    allowPrinting = allowPrinting,
+                    allowCopy = allowCopy,
+                    hasDistinctOwnerPassword = hasDistinctOwnerPassword
                 )
             } else {
                 if ((outputDir.exists() && !outputDir.isDirectory) || (!outputDir.exists() && !outputDir.mkdirs()) || !outputDir.canWrite()) {
@@ -1796,7 +2092,17 @@ object PdfEngine {
                     )
                 }
 
-                if (!validator(context, finalOutputFile, userPassword, expectedPageCount)) {
+                val finalDetails = verifyProtectedPdfMetadataAndPermissions(
+                    context = context,
+                    file = finalOutputFile,
+                    userPassword = userPassword,
+                    ownerPassword = ownerPassword,
+                    expectedPageCount = expectedPageCount,
+                    expectedKeyLengthBits = keyLengthBits,
+                    expectedAllowPrinting = allowPrinting,
+                    expectedAllowCopy = allowCopy
+                )
+                if (!validator(context, finalOutputFile, userPassword, expectedPageCount) || finalDetails == null) {
                     finalOutputFile.delete()
                     return@withContext ProtectResult.Error(
                         ProtectError.OUTPUT_VALIDATION_FAILED,
@@ -1808,7 +2114,15 @@ object PdfEngine {
                     file = finalOutputFile,
                     pageCount = expectedPageCount,
                     fileSizeBytes = finalOutputFile.length(),
-                    replacedOriginal = false
+                    replacedOriginal = false,
+                    encryptionAlgorithm = finalDetails.algorithmDescription,
+                    keyLengthBits = finalDetails.keyLengthBits,
+                    encryptionVersion = finalDetails.version,
+                    encryptionRevision = finalDetails.revision,
+                    cryptFilterMethod = finalDetails.cryptFilterMethod ?: "AESV3",
+                    allowPrinting = allowPrinting,
+                    allowCopy = allowCopy,
+                    hasDistinctOwnerPassword = hasDistinctOwnerPassword
                 )
             }
         } catch (e: CancellationException) {
@@ -1830,23 +2144,25 @@ object PdfEngine {
     }
 
     /**
-     * Real PDF Encryption using PDFBox StandardProtectionPolicy (128-bit AES / Password Protection)
+     * Real PDF Encryption using PDFBox StandardProtectionPolicy (256-bit AES / Password Protection)
      */
     suspend fun protectPdf(
         context: Context,
         pdfFile: File,
         userPassword: String,
-        ownerPassword: String = userPassword,
+        ownerPassword: String? = null,
         outputName: String = "Protected_${System.currentTimeMillis()}.pdf",
         inPlace: Boolean = false
     ): File? = withContext(Dispatchers.IO) {
+        val distinctOwner = ownerPassword?.takeIf { it.isNotBlank() && it != userPassword }
         when (
             val result = protectPdfDetailed(
                 context = context,
                 pdfFile = pdfFile,
                 userPassword = userPassword,
                 confirmPassword = userPassword,
-                ownerPassword = ownerPassword,
+                ownerPassword = distinctOwner,
+                confirmOwnerPassword = distinctOwner,
                 outputName = outputName,
                 inPlace = inPlace
             )

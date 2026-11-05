@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,15 +96,22 @@ fun PasswordProtectScreen(
     val isProcessing by viewModel.isProcessing.collectAsStateWithLifecycle()
     val processingMessage by viewModel.processingMessage.collectAsStateWithLifecycle()
 
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirmPassword by rememberSaveable { mutableStateOf("") }
-    var currentPdfPassword by rememberSaveable { mutableStateOf("") }
-    var passwordVisible by rememberSaveable { mutableStateOf(false) }
-    var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
-    var currentPasswordVisible by rememberSaveable { mutableStateOf(false) }
+    // Sensitive password states use `remember` (never `rememberSaveable`) so secrets are never written to savedInstanceState Bundles
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var ownerPassword by remember { mutableStateOf("") }
+    var confirmOwnerPassword by remember { mutableStateOf("") }
+    var currentPdfPassword by remember { mutableStateOf("") }
 
-    var allowPrinting by rememberSaveable { mutableStateOf(true) }
-    var allowCopy by rememberSaveable { mutableStateOf(true) }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var ownerPasswordVisible by remember { mutableStateOf(false) }
+    var confirmOwnerPasswordVisible by remember { mutableStateOf(false) }
+    var currentPasswordVisible by remember { mutableStateOf(false) }
+
+    var allowPrinting by remember { mutableStateOf(true) }
+    var allowCopy by remember { mutableStateOf(true) }
+    var useSeparateOwnerPassword by remember { mutableStateOf(false) }
     var replaceOriginal by rememberSaveable { mutableStateOf(false) }
     var outputName by rememberSaveable(selectedFile?.absolutePath) {
         mutableStateOf(
@@ -111,11 +119,36 @@ fun PasswordProtectScreen(
         )
     }
 
-    LaunchedEffect(selectedFile?.absolutePath) {
+    fun clearSensitiveInputs() {
+        password = ""
+        confirmPassword = ""
+        ownerPassword = ""
+        confirmOwnerPassword = ""
         currentPdfPassword = ""
+        passwordVisible = false
+        confirmPasswordVisible = false
+        ownerPasswordVisible = false
+        confirmOwnerPasswordVisible = false
+        currentPasswordVisible = false
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            clearSensitiveInputs()
+        }
+    }
+
+    LaunchedEffect(selectedFile?.absolutePath) {
+        clearSensitiveInputs()
         replaceOriginal = false
         selectedFile?.nameWithoutExtension?.let {
             outputName = "${it}_protected.pdf"
+        }
+    }
+
+    LaunchedEffect(protectResult) {
+        if (protectResult != null) {
+            clearSensitiveInputs()
         }
     }
 
@@ -153,9 +186,25 @@ fun PasswordProtectScreen(
         }
     }
 
-    val passwordsMatch = password.isNotEmpty() && password == confirmPassword
+    val requiresOwnerPassword = !allowPrinting || !allowCopy || useSeparateOwnerPassword
+
+    val passwordsMatch = password.isNotBlank() && password == confirmPassword
     val showMismatchMessage = confirmPassword.isNotEmpty() && password != confirmPassword
     val showBlankPasswordHint = password.isNotEmpty() && password.isBlank()
+
+    val showBlankOwnerPasswordHint = requiresOwnerPassword && ownerPassword.isNotEmpty() && ownerPassword.isBlank()
+    val showOwnerEqualsUserError = requiresOwnerPassword &&
+        ownerPassword.isNotBlank() &&
+        password.isNotBlank() &&
+        ownerPassword == password
+    val showOwnerMismatchMessage = requiresOwnerPassword &&
+        confirmOwnerPassword.isNotEmpty() &&
+        ownerPassword != confirmOwnerPassword
+    val ownerPasswordsValid = !requiresOwnerPassword || (
+        ownerPassword.isNotBlank() &&
+            ownerPassword == confirmOwnerPassword &&
+            ownerPassword != password
+        )
 
     val isUnsupportedOrCorrupt = securityState is PdfEngine.PdfSecurityState.InvalidOrCorrupted ||
         securityState is PdfEngine.PdfSecurityState.UnsupportedEncryption
@@ -165,6 +214,7 @@ fun PasswordProtectScreen(
         !isUnsupportedOrCorrupt &&
         password.isNotBlank() &&
         passwordsMatch &&
+        ownerPasswordsValid &&
         (!requiresCurrentPassword || currentPdfPassword.isNotBlank()) &&
         (replaceOriginal || outputName.isNotBlank())
 
@@ -479,26 +529,26 @@ fun PasswordProtectScreen(
                     .testTag("password_input")
             )
 
-            // Confirm Password Field
+            // Confirm Open Password Field
             OutlinedTextField(
                 value = confirmPassword,
                 onValueChange = {
                     confirmPassword = it
                     viewModel.clearProtectFeedback()
                 },
-                label = { Text("Confirm Password") },
+                label = { Text("Confirm Open Password") },
                 isError = showMismatchMessage,
                 supportingText = {
                     if (showMismatchMessage) {
                         Text(
-                            text = "Passwords do not match.",
+                            text = "Open passwords do not match.",
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.testTag("password_mismatch_error")
                         )
                     } else if (passwordsMatch) {
-                        Text("Passwords match.")
+                        Text("Open passwords match.")
                     } else {
-                        Text("Re-enter the password to confirm.")
+                        Text("Re-enter the open password to confirm.")
                     }
                 },
                 singleLine = true,
@@ -533,7 +583,7 @@ fun PasswordProtectScreen(
                     .testTag("confirm_password_input")
             )
 
-            // Document Permissions & Output Options
+            // Document Permissions, Owner Security & Output Options
             if (selectedFile != null && !isUnsupportedOrCorrupt) {
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -546,20 +596,32 @@ fun PasswordProtectScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Permissions & Output Mode",
+                            text = "Advanced Security & Permissions",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Open Password is required to view the PDF. Owner Password controls permission changes and full editing access. Note: PDF permission flags are enforced by compliant readers, may not be honored by all third-party viewers, and do not prevent screenshots.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("permissions_disclosure_text")
                         )
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = !isProcessing) { allowPrinting = !allowPrinting }
+                                .clickable(enabled = !isProcessing) {
+                                    allowPrinting = !allowPrinting
+                                    viewModel.clearProtectFeedback()
+                                }
                         ) {
                             Checkbox(
                                 checked = allowPrinting,
-                                onCheckedChange = { allowPrinting = it },
+                                onCheckedChange = {
+                                    allowPrinting = it
+                                    viewModel.clearProtectFeedback()
+                                },
                                 enabled = !isProcessing,
                                 modifier = Modifier.testTag("allow_printing_checkbox")
                             )
@@ -573,17 +635,189 @@ fun PasswordProtectScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = !isProcessing) { allowCopy = !allowCopy }
+                                .clickable(enabled = !isProcessing) {
+                                    allowCopy = !allowCopy
+                                    viewModel.clearProtectFeedback()
+                                }
                         ) {
                             Checkbox(
                                 checked = allowCopy,
-                                onCheckedChange = { allowCopy = it },
+                                onCheckedChange = {
+                                    allowCopy = it
+                                    viewModel.clearProtectFeedback()
+                                },
                                 enabled = !isProcessing,
                                 modifier = Modifier.testTag("allow_copy_checkbox")
                             )
                             Text(
                                 text = "Allow Copying Text & Graphics",
                                 style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+
+                        val permissionsRestricted = !allowPrinting || !allowCopy
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isProcessing && !permissionsRestricted) {
+                                    useSeparateOwnerPassword = !useSeparateOwnerPassword
+                                    if (!useSeparateOwnerPassword && !permissionsRestricted) {
+                                        ownerPassword = ""
+                                        confirmOwnerPassword = ""
+                                        ownerPasswordVisible = false
+                                        confirmOwnerPasswordVisible = false
+                                    }
+                                    viewModel.clearProtectFeedback()
+                                }
+                        ) {
+                            Checkbox(
+                                checked = requiresOwnerPassword,
+                                onCheckedChange = { checked ->
+                                    if (!permissionsRestricted) {
+                                        useSeparateOwnerPassword = checked
+                                        if (!checked) {
+                                            ownerPassword = ""
+                                            confirmOwnerPassword = ""
+                                            ownerPasswordVisible = false
+                                            confirmOwnerPasswordVisible = false
+                                        }
+                                        viewModel.clearProtectFeedback()
+                                    }
+                                },
+                                enabled = !isProcessing && !permissionsRestricted,
+                                modifier = Modifier.testTag("use_separate_owner_password_checkbox")
+                            )
+                            Column {
+                                Text(
+                                    text = if (permissionsRestricted) {
+                                        "Separate Owner Password (Required for restricted permissions)"
+                                    } else {
+                                        "Set a separate Owner Password"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (permissionsRestricted) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = "Separates view-only user access from full owner administration.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (requiresOwnerPassword) {
+                            OutlinedTextField(
+                                value = ownerPassword,
+                                onValueChange = {
+                                    ownerPassword = it
+                                    viewModel.clearProtectFeedback()
+                                },
+                                label = { Text("Owner Password") },
+                                isError = showBlankOwnerPasswordHint || showOwnerEqualsUserError,
+                                supportingText = {
+                                    when {
+                                        showBlankOwnerPasswordHint -> {
+                                            Text(
+                                                text = "Owner password cannot be blank or whitespace only.",
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                        showOwnerEqualsUserError -> {
+                                            Text(
+                                                text = "Owner password must be different from the Open password.",
+                                                color = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.testTag("owner_equals_open_password_error")
+                                            )
+                                        }
+                                        else -> {
+                                            Text("Required to modify permissions or remove security later.")
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                enabled = !isProcessing,
+                                visualTransformation = if (ownerPasswordVisible) {
+                                    VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { ownerPasswordVisible = !ownerPasswordVisible },
+                                        modifier = Modifier.testTag("toggle_owner_password_visibility")
+                                    ) {
+                                        Icon(
+                                            imageVector = if (ownerPasswordVisible) {
+                                                Icons.Default.VisibilityOff
+                                            } else {
+                                                Icons.Default.Visibility
+                                            },
+                                            contentDescription = if (ownerPasswordVisible) {
+                                                "Hide owner password"
+                                            } else {
+                                                "Show owner password"
+                                            }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("owner_password_input")
+                            )
+
+                            OutlinedTextField(
+                                value = confirmOwnerPassword,
+                                onValueChange = {
+                                    confirmOwnerPassword = it
+                                    viewModel.clearProtectFeedback()
+                                },
+                                label = { Text("Confirm Owner Password") },
+                                isError = showOwnerMismatchMessage,
+                                supportingText = {
+                                    if (showOwnerMismatchMessage) {
+                                        Text(
+                                            text = "Owner passwords do not match.",
+                                            color = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.testTag("owner_password_mismatch_error")
+                                        )
+                                    } else if (ownerPassword.isNotBlank() && ownerPassword == confirmOwnerPassword && !showOwnerEqualsUserError) {
+                                        Text("Owner passwords match.")
+                                    } else {
+                                        Text("Re-enter the owner password to confirm.")
+                                    }
+                                },
+                                singleLine = true,
+                                enabled = !isProcessing,
+                                visualTransformation = if (confirmOwnerPasswordVisible) {
+                                    VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { confirmOwnerPasswordVisible = !confirmOwnerPasswordVisible },
+                                        modifier = Modifier.testTag("toggle_confirm_owner_password_visibility")
+                                    ) {
+                                        Icon(
+                                            imageVector = if (confirmOwnerPasswordVisible) {
+                                                Icons.Default.VisibilityOff
+                                            } else {
+                                                Icons.Default.Visibility
+                                            },
+                                            contentDescription = if (confirmOwnerPasswordVisible) {
+                                                "Hide confirm owner password"
+                                            } else {
+                                                "Show confirm owner password"
+                                            }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("confirm_owner_password_input")
                             )
                         }
 
@@ -689,7 +923,10 @@ fun PasswordProtectScreen(
                             )
                         }
                         OutlinedButton(
-                            onClick = { viewModel.resetProcessingState() },
+                            onClick = {
+                                viewModel.resetProcessingState()
+                                clearSensitiveInputs()
+                            },
                             modifier = Modifier.testTag("cancel_protect_button")
                         ) {
                             Text("Cancel")
@@ -708,6 +945,8 @@ fun PasswordProtectScreen(
                         outputName = outputName.ifBlank { "${file.nameWithoutExtension}_protected.pdf" },
                         confirmPassword = confirmPassword,
                         currentPassword = currentPdfPassword.takeIf { it.isNotBlank() },
+                        ownerPassword = if (requiresOwnerPassword) ownerPassword else null,
+                        confirmOwnerPassword = if (requiresOwnerPassword) confirmOwnerPassword else null,
                         allowPrinting = allowPrinting,
                         allowCopy = allowCopy,
                         replaceOriginal = replaceOriginal
@@ -757,12 +996,12 @@ fun PasswordProtectScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "PDF Encrypted & Verified",
+                                    text = "PDF Encrypted & Verified (${result.encryptionAlgorithm})",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "${result.file.name} • ${result.pageCount} page(s) • ${PdfEngine.formatFileSize(result.fileSizeBytes)}",
+                                    text = "${result.file.name} • ${result.pageCount} page(s) • ${PdfEngine.formatFileSize(result.fileSizeBytes)} • ${result.cryptFilterMethod}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.testTag("protect_result_summary")

@@ -761,6 +761,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         confirmPassword: String = password,
         currentPassword: String? = null,
         ownerPassword: String? = null,
+        confirmOwnerPassword: String? = ownerPassword,
         allowPrinting: Boolean = true,
         allowCopy: Boolean = true,
         replaceOriginal: Boolean = false
@@ -774,16 +775,45 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             return
         }
         if (password.isBlank()) {
-            val msg = "Password cannot be empty."
+            val msg = "Open password cannot be empty or contain only whitespace."
             _protectPdfErrorMessage.value = msg
             _userNotification.value = msg
             return
         }
         if (password != confirmPassword) {
-            val msg = "Passwords do not match. Please confirm your password."
+            val msg = "Open passwords do not match. Please confirm your open password."
             _protectPdfErrorMessage.value = msg
             _userNotification.value = msg
             return
+        }
+
+        val hasRestrictedPermissions = !allowPrinting || !allowCopy
+        if (hasRestrictedPermissions && ownerPassword == null) {
+            val msg = "A separate Owner Password is required when restricting printing or copying permissions."
+            _protectPdfErrorMessage.value = msg
+            _userNotification.value = msg
+            return
+        }
+
+        if (ownerPassword != null) {
+            if (ownerPassword.isBlank()) {
+                val msg = "Owner password cannot be empty or contain only whitespace."
+                _protectPdfErrorMessage.value = msg
+                _userNotification.value = msg
+                return
+            }
+            if (confirmOwnerPassword != null && ownerPassword != confirmOwnerPassword) {
+                val msg = "Owner passwords do not match. Please confirm your owner password."
+                _protectPdfErrorMessage.value = msg
+                _userNotification.value = msg
+                return
+            }
+            if (ownerPassword == password) {
+                val msg = "Owner password must be different from the Open password."
+                _protectPdfErrorMessage.value = msg
+                _userNotification.value = msg
+                return
+            }
         }
 
         activeOperationJob = viewModelScope.launch {
@@ -800,6 +830,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                     password = password,
                     confirmPassword = confirmPassword,
                     ownerPassword = ownerPassword,
+                    confirmOwnerPassword = confirmOwnerPassword,
                     currentPassword = currentPassword,
                     allowPrinting = allowPrinting,
                     allowCopy = allowCopy,
@@ -815,9 +846,9 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                             _protectPdfRequiresCurrentPassword.value = true
                         }
                         _userNotification.value = if (result.replacedOriginal) {
-                            "Original PDF protected in-place: ${result.file.name}"
+                            "Original PDF protected in-place (${result.encryptionAlgorithm}): ${result.file.name}"
                         } else {
-                            "Document encrypted as ${result.file.name}!"
+                            "Document encrypted (${result.encryptionAlgorithm}) as ${result.file.name}!"
                         }
                     }
                     is PdfEngine.ProtectResult.Error -> {

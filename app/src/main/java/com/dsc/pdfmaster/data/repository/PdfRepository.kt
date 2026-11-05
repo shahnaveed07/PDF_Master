@@ -288,9 +288,11 @@ class PdfRepository(
         password: String,
         confirmPassword: String = password,
         ownerPassword: String? = null,
+        confirmOwnerPassword: String? = ownerPassword,
         currentPassword: String? = null,
         allowPrinting: Boolean = true,
         allowCopy: Boolean = true,
+        keyLengthBits: Int = 256,
         outputName: String,
         replaceOriginal: Boolean = false
     ): PdfEngine.ProtectResult = withContext(Dispatchers.IO) {
@@ -300,10 +302,12 @@ class PdfRepository(
             pdfFile = pdfFile,
             userPassword = password,
             confirmPassword = confirmPassword,
-            ownerPassword = ownerPassword ?: password,
+            ownerPassword = ownerPassword,
+            confirmOwnerPassword = confirmOwnerPassword,
             currentPassword = currentPassword,
             allowPrinting = allowPrinting,
             allowCopy = allowCopy,
+            keyLengthBits = keyLengthBits,
             outputName = defaultName,
             inPlace = replaceOriginal
         )

@@ -176,12 +176,15 @@ class ProtectAndOfficeConversionTest {
             textPrefix = "Annual Financial Report"
         )
         val password = "StrongPassword#2026"
+        val ownerPassword = "OwnerAdminPassword#2026"
 
         val result = PdfEngine.protectPdfDetailed(
             context = context,
             pdfFile = sourceFile,
             userPassword = password,
             confirmPassword = password,
+            ownerPassword = ownerPassword,
+            confirmOwnerPassword = ownerPassword,
             allowPrinting = false,
             allowCopy = false,
             outputName = "annual_report_protected.pdf",
@@ -194,6 +197,12 @@ class ProtectAndOfficeConversionTest {
         assertTrue(success.file.exists())
         assertFalse(success.replacedOriginal)
         assertEquals("annual_report_protected.pdf", success.file.name)
+        assertEquals("256-bit AES", success.encryptionAlgorithm)
+        assertEquals(256, success.keyLengthBits)
+        assertEquals(5, success.encryptionVersion)
+        assertEquals(6, success.encryptionRevision)
+        assertEquals("AESV3", success.cryptFilterMethod)
+        assertTrue(success.hasDistinctOwnerPassword)
 
         // 1. Original file must still open without a password
         PDDocument.load(sourceFile).use { origDoc ->
@@ -239,6 +248,270 @@ class ProtectAndOfficeConversionTest {
         assertTrue(secondResult is PdfEngine.ProtectResult.Success)
         val secondSuccess = secondResult as PdfEngine.ProtectResult.Success
         assertEquals("annual_report_protected (1).pdf", secondSuccess.file.name)
+    }
+
+    @Test
+    fun `protectPdfDetailed writes genuine 256-bit AES (V=5, R=6, CFM=AESV3) and 128-bit AES (V=4, R=4, CFM=AESV2) metadata into PDEncryption`() = runBlocking {
+        val source = createValidUnencryptedPdf(File(context.cacheDir, "crypto_check.pdf"), pageCount = 2)
+        val openPass = "CryptoUser#256"
+
+        // 1. Default 256-bit AES encryption
+        val aes256Result = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = openPass,
+            confirmPassword = openPass,
+            keyLengthBits = 256,
+            outputName = "crypto_aes256.pdf"
+        )
+        assertTrue("Expected AES-256 success but got $aes256Result", aes256Result is PdfEngine.ProtectResult.Success)
+        val aes256File = (aes256Result as PdfEngine.ProtectResult.Success).file
+
+        val details256 = PdfEngine.inspectEncryptionDetails(context, aes256File, openPass)
+        assertNotNull(details256)
+        assertTrue(details256!!.isEncrypted)
+        assertTrue("Encryption must be genuine AES", details256.isAes)
+        assertEquals("Standard", details256.filter)
+        assertEquals(5, details256.version)
+        assertEquals(6, details256.revision)
+        assertEquals(256, details256.keyLengthBits)
+        assertEquals("AESV3", details256.cryptFilterMethod)
+        assertEquals("StdCF", details256.streamFilterName)
+        assertEquals("StdCF", details256.stringFilterName)
+        assertEquals("256-bit AES", details256.algorithmDescription)
+
+        // 2. Explicit 128-bit AES encryption
+        val aes128Result = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = openPass,
+            confirmPassword = openPass,
+            keyLengthBits = 128,
+            outputName = "crypto_aes128.pdf"
+        )
+        assertTrue("Expected AES-128 success but got $aes128Result", aes128Result is PdfEngine.ProtectResult.Success)
+        val aes128File = (aes128Result as PdfEngine.ProtectResult.Success).file
+
+        val details128 = PdfEngine.inspectEncryptionDetails(context, aes128File, openPass)
+        assertNotNull(details128)
+        assertTrue(details128!!.isEncrypted)
+        assertTrue("Encryption must be genuine AES", details128.isAes)
+        assertEquals("Standard", details128.filter)
+        assertEquals(4, details128.version)
+        assertEquals(4, details128.revision)
+        assertEquals(128, details128.keyLengthBits)
+        assertEquals("AESV2", details128.cryptFilterMethod)
+        assertEquals("StdCF", details128.streamFilterName)
+        assertEquals("StdCF", details128.stringFilterName)
+        assertEquals("128-bit AES", details128.algorithmDescription)
+    }
+
+    @Test
+    fun `protectPdfDetailed separates user and owner passwords and enforces AccessPermission flags for user vs owner credentials`() = runBlocking {
+        val source = createValidUnencryptedPdf(File(context.cacheDir, "permissions_doc.pdf"), pageCount = 2)
+        val userPass = "ReaderOpenPass!1"
+        val ownerPass = "AdminOwnerPass!9"
+
+        // Case A: Print disabled, Copy enabled
+        val printDisabledResult = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = ownerPass,
+            confirmOwnerPassword = ownerPass,
+            allowPrinting = false,
+            allowCopy = true,
+            outputName = "no_print.pdf"
+        ) as PdfEngine.ProtectResult.Success
+
+        val userViewNoPrint = PdfEngine.inspectEncryptionDetails(context, printDisabledResult.file, userPass)!!
+        assertFalse("User password must NOT grant owner authorization", userViewNoPrint.isOwnerAuthorized)
+        assertTrue("User access permissions must be read-only", userViewNoPrint.isReadOnlyPermissions)
+        assertFalse("Printing must be disabled for user password", userViewNoPrint.canPrint)
+        assertFalse("Faithful printing must be disabled for user password", userViewNoPrint.canPrintFaithful)
+        assertTrue("Content extraction must remain enabled for user password", userViewNoPrint.canExtractContent)
+        assertFalse("Modification must be disabled for user password", userViewNoPrint.canModify)
+
+        val ownerViewNoPrint = PdfEngine.inspectEncryptionDetails(context, printDisabledResult.file, ownerPass)!!
+        assertTrue("Owner password MUST grant owner authorization", ownerViewNoPrint.isOwnerAuthorized)
+        assertFalse("Owner access permissions must not be read-only", ownerViewNoPrint.isReadOnlyPermissions)
+        assertTrue("Owner password must allow printing", ownerViewNoPrint.canPrint)
+        assertTrue("Owner password must allow content extraction", ownerViewNoPrint.canExtractContent)
+        assertTrue("Owner password must allow modification", ownerViewNoPrint.canModify)
+
+        // Case B: Print enabled, Copy disabled
+        val copyDisabledResult = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = ownerPass,
+            confirmOwnerPassword = ownerPass,
+            allowPrinting = true,
+            allowCopy = false,
+            outputName = "no_copy.pdf"
+        ) as PdfEngine.ProtectResult.Success
+
+        val userViewNoCopy = PdfEngine.inspectEncryptionDetails(context, copyDisabledResult.file, userPass)!!
+        assertFalse(userViewNoCopy.isOwnerAuthorized)
+        assertTrue(userViewNoCopy.canPrint)
+        assertFalse("Content extraction must be disabled for user password", userViewNoCopy.canExtractContent)
+        assertFalse("Accessibility extraction must follow copy flag", userViewNoCopy.canExtractForAccessibility)
+    }
+
+    @Test
+    fun `protectPdfDetailed rejects restricted permissions without separate owner password, owner equals user password, and mismatched owner confirmation`() = runBlocking {
+        val source = createValidUnencryptedPdf(File(context.cacheDir, "validation_rules.pdf"), pageCount = 1)
+        val userPass = "OpenSecret123"
+
+        // 1. Restricted permissions without owner password must fail with INVALID_OWNER_PASSWORD_CONFIGURATION
+        val missingOwner = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = null,
+            allowPrinting = false,
+            allowCopy = true,
+            outputName = "should_fail_1.pdf"
+        )
+        assertTrue(missingOwner is PdfEngine.ProtectResult.Error)
+        assertEquals(
+            PdfEngine.ProtectError.INVALID_OWNER_PASSWORD_CONFIGURATION,
+            (missingOwner as PdfEngine.ProtectResult.Error).error
+        )
+
+        // 2. Owner password equal to Open password must fail with INVALID_OWNER_PASSWORD_CONFIGURATION
+        val sameOwnerAndUser = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = userPass,
+            confirmOwnerPassword = userPass,
+            allowPrinting = false,
+            allowCopy = false,
+            outputName = "should_fail_2.pdf"
+        )
+        assertTrue(sameOwnerAndUser is PdfEngine.ProtectResult.Error)
+        assertEquals(
+            PdfEngine.ProtectError.INVALID_OWNER_PASSWORD_CONFIGURATION,
+            (sameOwnerAndUser as PdfEngine.ProtectResult.Error).error
+        )
+
+        // 3. Mismatched owner password confirmation must fail with PASSWORD_CONFIRMATION_MISMATCH
+        val mismatchedOwner = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = "OwnerSecretA",
+            confirmOwnerPassword = "OwnerSecretB",
+            allowPrinting = false,
+            allowCopy = false,
+            outputName = "should_fail_3.pdf"
+        )
+        assertTrue(mismatchedOwner is PdfEngine.ProtectResult.Error)
+        assertEquals(
+            PdfEngine.ProtectError.PASSWORD_CONFIRMATION_MISMATCH,
+            (mismatchedOwner as PdfEngine.ProtectResult.Error).error
+        )
+
+        // 4. Blank/whitespace owner password must fail with EMPTY_OR_BLANK_PASSWORD
+        val blankOwner = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = "    ",
+            confirmOwnerPassword = "    ",
+            allowPrinting = false,
+            allowCopy = false,
+            outputName = "should_fail_4.pdf"
+        )
+        assertTrue(blankOwner is PdfEngine.ProtectResult.Error)
+        assertEquals(
+            PdfEngine.ProtectError.EMPTY_OR_BLANK_PASSWORD,
+            (blankOwner as PdfEngine.ProtectResult.Error).error
+        )
+    }
+
+    @Test
+    fun `re-encrypting an already-encrypted PDF with separate owner password rejects user password and succeeds with owner password`() = runBlocking {
+        val source = createValidUnencryptedPdf(File(context.cacheDir, "owner_auth.pdf"), pageCount = 2)
+        val userPass = "UserOpenOnly"
+        val ownerPass = "OwnerFullControl"
+        val nextPass = "UpdatedOpenPass"
+
+        val initial = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = userPass,
+            confirmPassword = userPass,
+            ownerPassword = ownerPass,
+            confirmOwnerPassword = ownerPass,
+            allowPrinting = false,
+            allowCopy = false,
+            outputName = "owner_auth_initial.pdf"
+        ) as PdfEngine.ProtectResult.Success
+
+        // Attempting to re-encrypt using only the restricted user password must fail with OWNER_PASSWORD_REQUIRED
+        val userAttempt = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = initial.file,
+            userPassword = nextPass,
+            confirmPassword = nextPass,
+            currentPassword = userPass,
+            outputName = "owner_auth_rejected.pdf"
+        )
+        assertTrue("Expected Error when re-encrypting with user-only password", userAttempt is PdfEngine.ProtectResult.Error)
+        assertEquals(
+            PdfEngine.ProtectError.OWNER_PASSWORD_REQUIRED,
+            (userAttempt as PdfEngine.ProtectResult.Error).error
+        )
+
+        // Attempting to re-encrypt using the owner password must succeed
+        val ownerAttempt = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = initial.file,
+            userPassword = nextPass,
+            confirmPassword = nextPass,
+            currentPassword = ownerPass,
+            outputName = "owner_auth_updated.pdf"
+        )
+        assertTrue("Expected Success when re-encrypting with owner password", ownerAttempt is PdfEngine.ProtectResult.Success)
+    }
+
+    @Test
+    fun `protectPdfDetailed preserves untrimmed passwords with leading and trailing spaces verbatim`() = runBlocking {
+        val source = createValidUnencryptedPdf(File(context.cacheDir, "untrimmed.pdf"), pageCount = 1)
+        val untrimmedPassword = "  LeadingAndTrailingSpaces  "
+
+        val result = PdfEngine.protectPdfDetailed(
+            context = context,
+            pdfFile = source,
+            userPassword = untrimmedPassword,
+            confirmPassword = untrimmedPassword,
+            outputName = "untrimmed_protected.pdf"
+        )
+        assertTrue(result is PdfEngine.ProtectResult.Success)
+        val protectedFile = (result as PdfEngine.ProtectResult.Success).file
+
+        // Trimmed version must be rejected
+        var trimmedRejected = false
+        try {
+            PDDocument.load(protectedFile, untrimmedPassword.trim()).use { }
+        } catch (e: InvalidPasswordException) {
+            trimmedRejected = true
+        }
+        assertTrue("Trimmed password must NOT open a PDF protected with leading/trailing spaces", trimmedRejected)
+
+        // Exact untrimmed password must succeed
+        PDDocument.load(protectedFile, untrimmedPassword).use { doc ->
+            assertTrue(doc.isEncrypted)
+            assertEquals(1, doc.numberOfPages)
+        }
     }
 
     @Test
