@@ -1,0 +1,125 @@
+<resources>
+    <string name="app_name">PDF Master</string>
+    <string name="brand_subtitle">DARKSKULLCORPORATION</string>
+    <string name="search_placeholder">ابحث في ملفات PDF والأدوات…</string>
+    <string name="cd_pdf_logo">شعار PDF Master</string>
+    <string name="cd_search_pdfs">البحث في ملفات PDF</string>
+    <string name="cd_clear_search">مسح البحث</string>
+    <string name="cd_toggle_theme">تبديل المظهر الداكن أو الفاتح</string>
+    <string name="cd_navigate_back">رجوع</string>
+    <string name="cd_remove_file">إزالة الملف</string>
+
+    <string name="nav_dashboard">الرئيسية</string>
+    <string name="nav_recent_pdfs">الملفات الأخيرة</string>
+    <string name="nav_reader">القارئ</string>
+    <string name="nav_settings">الإعدادات</string>
+
+    <string name="section_quick_actions">إجراءات سريعة</string>
+    <string name="section_favorites">المفضلة</string>
+    <string name="section_recent_documents">المستندات الأخيرة</string>
+    <string name="action_see_all">عرض الكل</string>
+    <string name="empty_recent_home">لا توجد ملفات PDF حديثة. افتح أو أنشئ ملف PDF للبدء.</string>
+    <string name="msg_file_unavailable">الملف لم يعد متاحاً</string>
+    <string name="share_pdf_chooser">مشاركة PDF عبر</string>
+
+    <string name="tool_open_pdf_title">فتح PDF</string>
+    <string name="tool_open_pdf_subtitle">اختر ملفاً</string>
+    <string name="tool_create_pdf_title">إنشاء PDF</string>
+    <string name="tool_create_pdf_subtitle">نص / صور</string>
+    <string name="tool_convert_title">تحويل</string>
+    <string name="tool_convert_subtitle">أوفيس / صور / نص</string>
+    <string name="tool_compress_title">ضغط</string>
+    <string name="tool_compress_subtitle">تقليل الحجم / دفعة</string>
+    <string name="tool_protect_title">حماية PDF</string>
+    <string name="tool_protect_subtitle">تشفير 256-بت AES</string>
+    <string name="tool_unlock_title">إلغاء قفل PDF</string>
+    <string name="tool_unlock_subtitle">إزالة كلمة المرور</string>
+    <string name="tool_sign_title">توقيع PDF</string>
+    <string name="tool_sign_subtitle">رسم وتثبيت التوقيع</string>
+    <string name="tool_annotate_title">تعليق توضيحي</string>
+    <string name="tool_annotate_subtitle">تمييز ورسم ونص</string>
+    <string name="tool_watermark_title">علامة مائية</string>
+    <string name="tool_watermark_subtitle">نص وأرقام الصفحات</string>
+    <string name="tool_ocr_title">التعرف الضوئي OCR</string>
+    <string name="tool_ocr_subtitle">نص قابل للبحث دون إنترنت</string>
+    <string name="tool_scanner_title">ماسح المستندات</string>
+    <string name="tool_scanner_subtitle">مسح الصفحات إلى PDF</string>
+    <string name="tool_merge_title">دمج PDF</string>
+    <string name="tool_merge_subtitle">دمج ملفات متعددة</string>
+    <string name="tool_split_title">تقسيم PDF</string>
+    <string name="tool_split_subtitle">استخراج نطاق صفحات</string>
+    <string name="tool_extract_title">استخراج صفحات</string>
+    <string name="tool_extract_subtitle">حفظ صفحات محددة</string>
+    <string name="tool_images_to_pdf_title">صور إلى PDF</string>
+    <string name="tool_images_to_pdf_subtitle">تحويل الصور إلى PDF</string>
+    <string name="tool_manage_pages_title">إدارة الصفحات</string>
+    <string name="tool_manage_pages_subtitle">تدوير، ترتيب، حذف</string>
+
+    <string name="tab_all_files">كل الملفات (%1$d)</string>
+    <string name="tab_favorites_pinned">المفضلة / المثبتة (%1$d)</string>
+    <string name="header_recent_history">سجل ملفات PDF الأخيرة</string>
+    <string name="header_favorites_pinned_docs">المستندات المفضلة والمثبتة</string>
+    <string name="header_favorites_pinned">المفضلة / المثبتة</string>
+    <string name="header_all_recent_files">كل الملفات الأخيرة</string>
+    <string name="action_clear_list">مسح القائمة</string>
+    <string name="empty_recent_files">لم يتم العثور على مستندات حديثة</string>
+    <string name="empty_recent_files_hint">افتح أو امسح أو أنشئ ملف PDF للوصول السريع دون اتصال.</string>
+    <string name="empty_starred_files">لا توجد ملفات مفضلة أو مثبتة بعد</string>
+    <string name="empty_starred_files_hint">ثبّت المستندات المهمة لإبقائها في أعلى القائمة.</string>
+    <string name="two_pane_viewer_placeholder">اختر ملف PDF من القائمة لمعاينته وقراءته جنباً إلى جنب.</string>
+    <string name="dialog_rename_title">إعادة تسمية ملف PDF</string>
+    <string name="dialog_rename_prompt">أدخل اسماً جديداً للملف:</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_close">إغلاق</string>
+    <string name="dialog_delete_title">حذف ملف PDF؟</string>
+    <string name="dialog_delete_message">هل أنت متأكد من حذف \'%1$s\' نهائياً من وحدة التخزين؟</string>
+    <string name="action_delete_permanently">حذف نهائي</string>
+    <string name="dialog_file_info_title">معلومات الملف</string>
+    <string name="dialog_clear_recent_title">مسح السجل الأخير؟</string>
+    <string name="dialog_clear_recent_message">سيؤدي هذا إلى إزالة السجل فقط بينما تبقى الملفات محفوظة على جهازك.</string>
+    <string name="action_clear_all">مسح الكل</string>
+
+    <string name="merge_screen_title">دمج ملفات PDF</string>
+    <string name="merge_output_name_label">اسم ملف PDF الناتج</string>
+    <string name="merge_selected_files_count">الملفات المحددة (%1$d)</string>
+    <string name="merge_add_pdfs">إضافة PDF</string>
+    <string name="merge_empty_title">لم يتم تحديد ملفات PDF للدمج</string>
+    <string name="merge_empty_subtitle">اضغط على \'إضافة PDF\' أعلاه لاختيار ملفين أو أكثر.</string>
+    <string name="merge_execute_button">دمج %1$d ملفات PDF الآن</string>
+
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_engine_subtitle">v%1$s • معالجة محلية وخاصة</string>
+    <string name="settings_section_preferences">التفضيلات</string>
+    <string name="settings_visual_theme">المظهر المرئي</string>
+    <string name="settings_theme_dark">المظهر الداكن (أحادي اللون)</string>
+    <string name="settings_theme_light">المظهر الفاتح (أحادي اللون)</string>
+    <string name="settings_theme_system">افتراضي النظام</string>
+    <string name="settings_dynamic_color_title">ألوان Material You الديناميكية</string>
+    <string name="settings_dynamic_color_subtitle">استخدام ألوان الخلفية بدلاً من النمط أحادي اللون</string>
+    <string name="settings_section_privacy">الخصوصية والأمان</string>
+    <string name="settings_on_device_title">معالجة على الجهاز</string>
+    <string name="settings_on_device_body">تتم جميع عمليات PDF محلياً على جهازك دون رفع أي مستند إلى السحابة.</string>
+    <string name="settings_view_privacy_policy">عرض سياسة الخصوصية</string>
+    <string name="settings_privacy_policy_title">سياسة الخصوصية</string>
+    <string name="settings_privacy_policy_body" formatted="false">يعمل PDF Master بالكامل على جهازك:\n\n• عدم جمع أي بيانات\n• معالجة محلية بالكامل\n• لا يوجد رفع سحابي\n• يعمل بدون إنترنت</string>
+    <string name="settings_section_about">حول التطبيق</string>
+    <string name="settings_author">بواسطة DarkSkullCorporation</string>
+    <string name="settings_about_description">مصمم لسير عمل PDF سريع وموثوق وخاص على نظام Android.</string>
+    <string name="settings_version_format">الإصدار %1$s</string>
+    <string name="settings_section_data_storage">البيانات والتخزين</string>
+    <string name="settings_clear_recent_history">مسح سجل الملفات الأخيرة</string>
+    <string name="settings_clear_temp_cache">مسح ملفات التخزين المؤقت</string>
+    <string name="settings_replay_onboarding">إعادة عرض دليل البداية</string>
+
+    <string name="onboarding_skip">تخطي</string>
+    <string name="onboarding_next">التالي</string>
+    <string name="onboarding_get_started">ابدأ الآن</string>
+    <string name="onboarding_step_indicator">الخطوة %1$d من %2$d</string>
+    <string name="onboarding_page1_title" formatted="false">محلي وخاص 100%</string>
+    <string name="onboarding_page1_body">تبقى جميع مستنداتك على هاتفك فقط. لا رفع سحابي ولا تتبع ولا أذونات شبكة.</string>
+    <string name="onboarding_page2_title">أدوات PDF وأوفيس متكاملة</string>
+    <string name="onboarding_page2_body">دمج وتقسيم وضغط وتشفير 256-بت AES وتحويل ملفات DOCX وXLSX وPPTX دون اتصال.</string>
+    <string name="onboarding_page3_title">توقيع وتعليق ومسح ضوئي وOCR</string>
+    <string name="onboarding_page3_body">وقّع المستندات، أضف التعليقات، امسح الصفحات ضوئياً، وأنشئ ملفات PDF قابلة للبحث عبر OCR المحلي.</string>
+</resources>

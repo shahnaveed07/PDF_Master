@@ -1,11 +1,19 @@
 package com.dsc.pdfmaster
 
+import android.app.Application
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.test.core.app.ApplicationProvider
+import com.dsc.pdfmaster.di.AppModule
+import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.screens.HomeScreen
+import com.dsc.pdfmaster.ui.screens.MergePdfScreen
 import com.dsc.pdfmaster.ui.theme.PdfMasterTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,16 +26,56 @@ import org.robolectric.annotation.GraphicsMode
 @Config(qualifiers = RobolectricDeviceQualifiers.Pixel8, sdk = [34])
 class GreetingScreenshotTest {
 
-  @get:Rule val composeTestRule = createComposeRule()
+    @get:Rule
+    val composeTestRule = createComposeRule()
 
-  @Test
-  fun greeting_screenshot() {
-    composeTestRule.setContent {
-      PdfMasterTheme {
-        Text("PDF Master")
-      }
+    private lateinit var application: Application
+
+    @Before
+    fun setUp() {
+        application = ApplicationProvider.getApplicationContext()
+        PDFBoxResourceLoader.init(application)
+        AppModule.initialize(application)
     }
 
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
-  }
+    @Test
+    fun greeting_screenshot() {
+        composeTestRule.setContent {
+            PdfMasterTheme {
+                Text("PDF Master")
+            }
+        }
+
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
+    }
+
+    @Test
+    fun home_screen_screenshot() {
+        val vm = PdfMasterViewModel(application)
+        composeTestRule.setContent {
+            PdfMasterTheme(darkTheme = true) {
+                HomeScreen(
+                    viewModel = vm,
+                    onOpenPdfViewer = {}
+                )
+            }
+        }
+
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/home_screen.png")
+    }
+
+    @Test
+    fun merge_screen_screenshot() {
+        val vm = PdfMasterViewModel(application)
+        composeTestRule.setContent {
+            PdfMasterTheme(darkTheme = true) {
+                MergePdfScreen(
+                    viewModel = vm,
+                    onBack = {}
+                )
+            }
+        }
+
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/merge_screen.png")
+    }
 }

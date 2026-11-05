@@ -623,7 +623,7 @@ object OfficeToPdfConverter {
         val safe = sanitizeForPdfFont(text)
         if (safe.isEmpty()) return
         try {
-            cs.setNonStrokingColor(r, g, b)
+            cs.setNonStrokingColor(r / 255f, g / 255f, b / 255f)
             cs.beginText()
             cs.setFont(font, fontSize)
             cs.newLineAtOffset(x, y)
@@ -1210,12 +1210,12 @@ object OfficeToPdfConverter {
                         val rowBottom = cursorY - rowHeight
 
                         if (isHeaderRow) {
-                            cs.setNonStrokingColor(236, 240, 245)
+                            cs.setNonStrokingColor(236f / 255f, 240f / 255f, 245f / 255f)
                             cs.addRect(margin, rowBottom, usableWidth, rowHeight)
                             cs.fill()
                         }
 
-                        cs.setStrokingColor(180, 186, 196)
+                        cs.setStrokingColor(180f / 255f, 186f / 255f, 196f / 255f)
                         cs.setLineWidth(0.6f)
                         for (colIdx in 0 until colCount) {
                             val cellLeft = margin + colIdx * colWidth
@@ -1633,11 +1633,11 @@ object OfficeToPdfConverter {
                 fun drawColumnLetterBanner() {
                     val bannerHeight = 18f
                     val bottom = cursorY - bannerHeight
-                    cs.setNonStrokingColor(226, 232, 240)
+                    cs.setNonStrokingColor(226f / 255f, 232f / 255f, 240f / 255f)
                     cs.addRect(margin, bottom, usableWidth, bannerHeight)
                     cs.fill()
 
-                    cs.setStrokingColor(160, 170, 185)
+                    cs.setStrokingColor(160f / 255f, 170f / 255f, 185f / 255f)
                     cs.setLineWidth(0.5f)
                     cs.addRect(margin, bottom, rowNumColWidth, bannerHeight)
                     cs.stroke()
@@ -1698,16 +1698,16 @@ object OfficeToPdfConverter {
                     val rowBottom = cursorY - rowHeight
 
                     if (isFirstRow) {
-                        cs.setNonStrokingColor(245, 247, 250)
+                        cs.setNonStrokingColor(245f / 255f, 247f / 255f, 250f / 255f)
                         cs.addRect(margin + rowNumColWidth, rowBottom, tableUsableWidth, rowHeight)
                         cs.fill()
                     }
 
                     // Row number cell
-                    cs.setNonStrokingColor(248, 250, 252)
+                    cs.setNonStrokingColor(248f / 255f, 250f / 255f, 252f / 255f)
                     cs.addRect(margin, rowBottom, rowNumColWidth, rowHeight)
                     cs.fill()
-                    cs.setStrokingColor(190, 198, 210)
+                    cs.setStrokingColor(190f / 255f, 198f / 255f, 210f / 255f)
                     cs.setLineWidth(0.5f)
                     cs.addRect(margin, rowBottom, rowNumColWidth, rowHeight)
                     cs.stroke()
@@ -1725,7 +1725,7 @@ object OfficeToPdfConverter {
 
                     for ((localIdx, lines) in wrappedCells.withIndex()) {
                         val cellLeft = margin + rowNumColWidth + localIdx * colWidth
-                        cs.setStrokingColor(190, 198, 210)
+                        cs.setStrokingColor(190f / 255f, 198f / 255f, 210f / 255f)
                         cs.addRect(cellLeft, rowBottom, colWidth, rowHeight)
                         cs.stroke()
 
@@ -2071,12 +2071,12 @@ object OfficeToPdfConverter {
 
             fun drawSlideChrome(isContinuation: Boolean) {
                 // Subtle top header bar
-                cs.setNonStrokingColor(18, 24, 38)
+                cs.setNonStrokingColor(18f / 255f, 24f / 255f, 38f / 255f)
                 cs.addRect(0f, slideHeight - 10f, slideWidth, 10f)
                 cs.fill()
 
                 // Slide border frame
-                cs.setStrokingColor(215, 220, 228)
+                cs.setStrokingColor(215f / 255f, 220f / 255f, 228f / 255f)
                 cs.setLineWidth(1f)
                 cs.addRect(12f, 12f, slideWidth - 24f, slideHeight - 24f)
                 cs.stroke()
@@ -2142,7 +2142,7 @@ object OfficeToPdfConverter {
 
             // Divider rule under title block
             cursorY -= 4f
-            cs.setStrokingColor(220, 226, 235)
+            cs.setStrokingColor(220f / 255f, 226f / 255f, 235f / 255f)
             cs.setLineWidth(0.8f)
             cs.moveTo(margin, cursorY)
             cs.lineTo(slideWidth - margin, cursorY)
@@ -2230,11 +2230,11 @@ object OfficeToPdfConverter {
                     val rowTop = cursorY
                     val rowBottom = cursorY - rowH
                     if (isHeader) {
-                        cs.setNonStrokingColor(235, 240, 248)
+                        cs.setNonStrokingColor(235f / 255f, 240f / 255f, 248f / 255f)
                         cs.addRect(margin, rowBottom, usableWidth, rowH)
                         cs.fill()
                     }
-                    cs.setStrokingColor(180, 188, 200)
+                    cs.setStrokingColor(180f / 255f, 188f / 255f, 200f / 255f)
                     cs.setLineWidth(0.6f)
                     for (cIdx in 0 until colCount) {
                         val left = margin + cIdx * colWidth

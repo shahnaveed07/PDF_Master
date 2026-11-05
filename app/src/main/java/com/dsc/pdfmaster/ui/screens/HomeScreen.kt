@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -50,19 +51,34 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.ScreenRoute
+import com.dsc.pdfmaster.ui.adaptive.WindowSizeClass
+import com.dsc.pdfmaster.ui.adaptive.rememberWindowSizeClass
 import com.dsc.pdfmaster.ui.components.PdfFileCard
 import java.io.File
+
+private data class QuickActionItem(
+    val titleRes: Int,
+    val subtitleRes: Int,
+    val icon: ImageVector,
+    val tag: String,
+    val onClick: () -> Unit
+)
 
 @Composable
 fun HomeScreen(
     viewModel: PdfMasterViewModel,
     onOpenPdfViewer: (File) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    windowSizeClass: WindowSizeClass = rememberWindowSizeClass()
 ) {
     val context = LocalContext.current
     val recentList by viewModel.recentPdfs.collectAsState()
@@ -76,152 +92,145 @@ fun HomeScreen(
         }
     }
 
+    val quickActions = listOf(
+        QuickActionItem(
+            titleRes = R.string.tool_open_pdf_title,
+            subtitleRes = R.string.tool_open_pdf_subtitle,
+            icon = Icons.Default.FolderOpen,
+            tag = "action_open_pdf",
+            onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_create_pdf_title,
+            subtitleRes = R.string.tool_create_pdf_subtitle,
+            icon = Icons.Default.AddCircleOutline,
+            tag = "action_create_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.CREATE_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_convert_title,
+            subtitleRes = R.string.tool_convert_subtitle,
+            icon = Icons.Default.Transform,
+            tag = "action_convert_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.CONVERT_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_compress_title,
+            subtitleRes = R.string.tool_compress_subtitle,
+            icon = Icons.Default.Compress,
+            tag = "action_compress_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.COMPRESS_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_protect_title,
+            subtitleRes = R.string.tool_protect_subtitle,
+            icon = Icons.Default.Lock,
+            tag = "action_protect_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.PASSWORD_PROTECT) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_unlock_title,
+            subtitleRes = R.string.tool_unlock_subtitle,
+            icon = Icons.Default.LockOpen,
+            tag = "action_remove_password",
+            onClick = { viewModel.navigateTo(ScreenRoute.REMOVE_PASSWORD) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_sign_title,
+            subtitleRes = R.string.tool_sign_subtitle,
+            icon = Icons.Default.Draw,
+            tag = "action_sign_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.SIGN_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_annotate_title,
+            subtitleRes = R.string.tool_annotate_subtitle,
+            icon = Icons.Default.EditNote,
+            tag = "action_annotate_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.ANNOTATE_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_watermark_title,
+            subtitleRes = R.string.tool_watermark_subtitle,
+            icon = Icons.Default.FormatColorText,
+            tag = "action_watermark_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.WATERMARK_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_ocr_title,
+            subtitleRes = R.string.tool_ocr_subtitle,
+            icon = Icons.Default.TextFields,
+            tag = "action_ocr_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.OCR_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_scanner_title,
+            subtitleRes = R.string.tool_scanner_subtitle,
+            icon = Icons.Default.CameraAlt,
+            tag = "action_document_scanner",
+            onClick = { viewModel.navigateTo(ScreenRoute.DOCUMENT_SCANNER) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_merge_title,
+            subtitleRes = R.string.tool_merge_subtitle,
+            icon = Icons.AutoMirrored.Filled.CallMerge,
+            tag = "action_merge_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.MERGE_PDF) }
+        )
+    )
+
+    val columns = windowSizeClass.quickActionGridColumns.coerceIn(2, 4)
+    val unavailableMessage = stringResource(R.string.msg_file_unavailable)
+    val shareChooserTitle = stringResource(R.string.share_pdf_chooser)
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .testTag("home_screen_list"),
         contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
     ) {
         // Quick Action Grid Title
         item {
             Text(
-                text = "QUICK ACTIONS",
+                text = stringResource(R.string.section_quick_actions),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.2.sp
+                letterSpacing = 1.2.sp,
+                modifier = Modifier
+                    .semantics { heading() }
+                    .testTag("quick_actions_header")
             )
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // Quick Action Grid
+        // Adaptive Quick Action Grid (2 columns on Compact, 3 on Medium, 4 on Expanded)
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    QuickActionCard(
-                        title = "Open PDF",
-                        subtitle = "Select file",
-                        icon = Icons.Default.FolderOpen,
-                        onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                        tag = "action_open_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        title = "Create PDF",
-                        subtitle = "Text / Images",
-                        icon = Icons.Default.AddCircleOutline,
-                        onClick = { viewModel.navigateTo(ScreenRoute.CREATE_PDF) },
-                        tag = "action_create_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    QuickActionCard(
-                        title = "Convert",
-                        subtitle = "Office / Images / TXT",
-                        icon = Icons.Default.Transform,
-                        onClick = { viewModel.navigateTo(ScreenRoute.CONVERT_PDF) },
-                        tag = "action_convert_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        title = "Compress",
-                        subtitle = "Reduce size / Batch",
-                        icon = Icons.Default.Compress,
-                        onClick = { viewModel.navigateTo(ScreenRoute.COMPRESS_PDF) },
-                        tag = "action_compress_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    QuickActionCard(
-                        title = "Protect PDF",
-                        subtitle = "256-bit AES lock",
-                        icon = Icons.Default.Lock,
-                        onClick = { viewModel.navigateTo(ScreenRoute.PASSWORD_PROTECT) },
-                        tag = "action_protect_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        title = "Unlock PDF",
-                        subtitle = "Remove password",
-                        icon = Icons.Default.LockOpen,
-                        onClick = { viewModel.navigateTo(ScreenRoute.REMOVE_PASSWORD) },
-                        tag = "action_remove_password",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    QuickActionCard(
-                        title = "Sign PDF",
-                        subtitle = "Draw & flatten signature",
-                        icon = Icons.Default.Draw,
-                        onClick = { viewModel.navigateTo(ScreenRoute.SIGN_PDF) },
-                        tag = "action_sign_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        title = "Annotate",
-                        subtitle = "Highlight, draw & text",
-                        icon = Icons.Default.EditNote,
-                        onClick = { viewModel.navigateTo(ScreenRoute.ANNOTATE_PDF) },
-                        tag = "action_annotate_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    QuickActionCard(
-                        title = "Watermark",
-                        subtitle = "Text & page numbers",
-                        icon = Icons.Default.FormatColorText,
-                        onClick = { viewModel.navigateTo(ScreenRoute.WATERMARK_PDF) },
-                        tag = "action_watermark_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        title = "OCR PDF",
-                        subtitle = "Offline searchable text",
-                        icon = Icons.Default.TextFields,
-                        onClick = { viewModel.navigateTo(ScreenRoute.OCR_PDF) },
-                        tag = "action_ocr_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    QuickActionCard(
-                        title = "Doc Scanner",
-                        subtitle = "Scan pages to PDF",
-                        icon = Icons.Default.CameraAlt,
-                        onClick = { viewModel.navigateTo(ScreenRoute.DOCUMENT_SCANNER) },
-                        tag = "action_document_scanner",
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionCard(
-                        title = "Merge PDFs",
-                        subtitle = "Combine multiple files",
-                        icon = Icons.AutoMirrored.Filled.CallMerge,
-                        onClick = { viewModel.navigateTo(ScreenRoute.MERGE_PDF) },
-                        tag = "action_merge_pdf",
-                        modifier = Modifier.weight(1f)
-                    )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.testTag("quick_actions_grid_${columns}_cols")
+            ) {
+                quickActions.chunked(columns).forEach { rowItems ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        rowItems.forEach { action ->
+                            QuickActionCard(
+                                title = stringResource(action.titleRes),
+                                subtitle = stringResource(action.subtitleRes),
+                                icon = action.icon,
+                                onClick = action.onClick,
+                                tag = action.tag,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        val emptySlots = columns - rowItems.size
+                        repeat(emptySlots) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
 
@@ -234,17 +243,18 @@ fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.section_favorites),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "FAVORITES",
+                        text = stringResource(R.string.section_favorites),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 1.2.sp
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.semantics { heading() }
                     )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
@@ -253,7 +263,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
-                    items(favoriteList) { fav ->
+                    items(favoriteList, key = { "fav_${it.filePath}" }) { fav ->
                         val available = viewModel.isPdfAvailable(fav)
                         PdfFileCard(
                             pdf = fav,
@@ -262,11 +272,12 @@ fun HomeScreen(
                                 if (available) {
                                     onOpenPdfViewer(File(fav.filePath))
                                 } else {
-                                    viewModel.showNotification("File no longer available")
+                                    viewModel.showNotification(unavailableMessage)
                                 }
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(fav.filePath, fav.isFavorite) },
-                            onShare = { sharePdfFile(context, File(fav.filePath)) },
+                            onTogglePinned = { viewModel.togglePinned(fav.filePath, fav.isPinned) },
+                            onShare = { sharePdfFile(context, File(fav.filePath), shareChooserTitle) },
                             onRename = { viewModel.renamePdf(File(fav.filePath), "Renamed_${fav.fileName}") },
                             onDelete = { viewModel.deletePdf(fav.filePath) },
                             onRemoveFromRecent = { viewModel.removePdfFromRecent(fav.filePath) },
@@ -287,17 +298,24 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "RECENT DOCUMENTS",
+                    text = stringResource(R.string.section_recent_documents),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 1.2.sp
+                    letterSpacing = 1.2.sp,
+                    modifier = Modifier.semantics { heading() }
                 )
                 TextButton(
                     onClick = { viewModel.navigateTo(ScreenRoute.RECENT_FILES) },
-                    modifier = Modifier.testTag("see_all_recent_button")
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("see_all_recent_button")
                 ) {
-                    Text("See All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.action_see_all),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -306,7 +324,9 @@ fun HomeScreen(
         if (recentList.isEmpty()) {
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_empty_recent_card"),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
@@ -317,7 +337,7 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No recent PDFs. Open or create a PDF to get started.",
+                            text = stringResource(R.string.empty_recent_home),
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -325,7 +345,7 @@ fun HomeScreen(
                 }
             }
         } else {
-            items(recentList.take(3)) { pdf ->
+            items(recentList.take(3), key = { "recent_${it.filePath}" }) { pdf ->
                 val available = viewModel.isPdfAvailable(pdf)
                 PdfFileCard(
                     pdf = pdf,
@@ -334,11 +354,12 @@ fun HomeScreen(
                         if (available) {
                             onOpenPdfViewer(File(pdf.filePath))
                         } else {
-                            viewModel.showNotification("File no longer available")
+                            viewModel.showNotification(unavailableMessage)
                         }
                     },
                     onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
-                    onShare = { sharePdfFile(context, File(pdf.filePath)) },
+                    onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
+                    onShare = { sharePdfFile(context, File(pdf.filePath), shareChooserTitle) },
                     onRename = { viewModel.renamePdf(File(pdf.filePath), "Renamed_${pdf.fileName}") },
                     onDelete = { viewModel.deletePdf(pdf.filePath) },
                     onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
@@ -360,6 +381,7 @@ private fun QuickActionCard(
 ) {
     Card(
         modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clip(RoundedCornerShape(14.dp))
             .clickable { onClick() }
             .testTag(tag),
@@ -383,7 +405,7 @@ private fun QuickActionCard(
             ) {
                 Icon(
                     imageVector = icon,
-                    contentDescription = null,
+                    contentDescription = title,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(22.dp)
                 )
@@ -405,7 +427,11 @@ private fun QuickActionCard(
     }
 }
 
-private fun sharePdfFile(context: android.content.Context, file: File) {
+private fun sharePdfFile(
+    context: android.content.Context,
+    file: File,
+    chooserTitle: String
+) {
     try {
         val uri = androidx.core.content.FileProvider.getUriForFile(
             context,
@@ -417,7 +443,7 @@ private fun sharePdfFile(context: android.content.Context, file: File) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Share PDF via"))
+        context.startActivity(Intent.createChooser(intent, chooserTitle))
     } catch (e: Exception) {
         e.printStackTrace()
     }

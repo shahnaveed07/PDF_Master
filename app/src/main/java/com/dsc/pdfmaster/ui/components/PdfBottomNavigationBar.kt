@@ -1,6 +1,7 @@
 package com.dsc.pdfmaster.ui.components
 
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
@@ -20,12 +21,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.ui.ScreenRoute
 
 data class NavItem(
     val route: ScreenRoute,
-    val label: String,
+    val labelRes: Int,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
     val tag: String
@@ -34,28 +37,28 @@ data class NavItem(
 val navItems = listOf(
     NavItem(
         route = ScreenRoute.HOME,
-        label = "Dashboard",
+        labelRes = R.string.nav_dashboard,
         selectedIcon = Icons.Filled.Home,
         unselectedIcon = Icons.Outlined.Home,
         tag = "nav_home"
     ),
     NavItem(
         route = ScreenRoute.RECENT_FILES,
-        label = "Recent PDFs",
+        labelRes = R.string.nav_recent_pdfs,
         selectedIcon = Icons.Filled.Folder,
         unselectedIcon = Icons.Outlined.Folder,
         tag = "nav_recent"
     ),
     NavItem(
         route = ScreenRoute.PDF_VIEWER,
-        label = "Reader",
+        labelRes = R.string.nav_reader,
         selectedIcon = Icons.Filled.PictureAsPdf,
         unselectedIcon = Icons.Outlined.PictureAsPdf,
         tag = "nav_viewer"
     ),
     NavItem(
         route = ScreenRoute.SETTINGS,
-        label = "Settings",
+        labelRes = R.string.nav_settings,
         selectedIcon = Icons.Filled.Settings,
         unselectedIcon = Icons.Outlined.Settings,
         tag = "nav_settings"
@@ -74,21 +77,24 @@ fun PdfBottomNavigationBar(
     ) {
         navItems.forEach { item ->
             val isSelected = currentRoute == item.route
+            val labelText = stringResource(item.labelRes)
             NavigationBarItem(
                 selected = isSelected,
                 onClick = { onNavigate(item.route) },
                 icon = {
                     Icon(
                         imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
-                        contentDescription = item.label
+                        contentDescription = labelText
                     )
                 },
-                label = { Text(item.label) },
+                label = { Text(labelText) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     indicatorColor = MaterialTheme.colorScheme.primaryContainer
                 ),
-                modifier = Modifier.testTag(item.tag)
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .testTag(item.tag)
             )
         }
     }

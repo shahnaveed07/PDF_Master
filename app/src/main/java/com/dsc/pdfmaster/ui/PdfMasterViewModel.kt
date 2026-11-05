@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
+@androidx.annotation.Keep
 enum class ScreenRoute {
     HOME,
     RECENT_FILES,
@@ -144,19 +145,53 @@ class PdfMasterViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _isDarkMode = MutableStateFlow(true)
+    private val uiPrefs = application.getSharedPreferences("pdf_master_ui_prefs", android.content.Context.MODE_PRIVATE)
+
+    private val _isDarkMode = MutableStateFlow(uiPrefs.getBoolean("is_dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
 
     private val _themeMode = MutableStateFlow(ThemeMode.DARK)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    private val _isDynamicColorEnabled = MutableStateFlow(uiPrefs.getBoolean("dynamic_color_enabled", false))
+    val isDynamicColorEnabled: StateFlow<Boolean> = _isDynamicColorEnabled.asStateFlow()
+
+    private val _hasCompletedOnboarding = MutableStateFlow(uiPrefs.getBoolean("onboarding_completed", false))
+    val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
+
+    private val _showOnboarding = MutableStateFlow(false)
+    val showOnboarding: StateFlow<Boolean> = _showOnboarding.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         _themeMode.value = mode
         if (mode == ThemeMode.DARK) {
             _isDarkMode.value = true
+            uiPrefs.edit().putBoolean("is_dark_mode", true).apply()
         } else if (mode == ThemeMode.LIGHT) {
             _isDarkMode.value = false
+            uiPrefs.edit().putBoolean("is_dark_mode", false).apply()
         }
+    }
+
+    fun setDynamicColorEnabled(enabled: Boolean) {
+        _isDynamicColorEnabled.value = enabled
+        uiPrefs.edit().putBoolean("dynamic_color_enabled", enabled).apply()
+    }
+
+    fun checkAndTriggerFirstRunOnboarding() {
+        if (!_hasCompletedOnboarding.value) {
+            _showOnboarding.value = true
+        }
+    }
+
+    fun completeOnboarding() {
+        _hasCompletedOnboarding.value = true
+        _showOnboarding.value = false
+        uiPrefs.edit().putBoolean("onboarding_completed", true).apply()
+    }
+
+    fun replayOnboarding() {
+        _showOnboarding.value = true
     }
 
     private val _isProcessing = MutableStateFlow(false)

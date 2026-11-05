@@ -284,4 +284,115 @@ class PdfEngineTest {
             extractedText.delete()
         }
     }
+
+    @Test
+    fun testReorderAndRotatePagesPreservesContentOrder() {
+        runBlocking {
+            val source = File(context.cacheDir, "reorder_rotate_src.pdf")
+            PDDocument().use { doc ->
+                listOf("PAGE_ONE_ALPHA", "PAGE_TWO_BETA", "PAGE_THREE_GAMMA").forEach { label ->
+                    val page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+                    doc.addPage(page)
+                    com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page).use { cs ->
+                        cs.beginText()
+                        cs.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD, 14f)
+                        cs.newLineAtOffset(50f, 700f)
+                        cs.showText(label)
+                        cs.endText()
+                    }
+                }
+                doc.save(source)
+            }
+
+            // Reorder pages to [2, 0, 1] and rotate [180, 90, 270]
+            val items = listOf(
+                PdfPageItem(pageIndex = 2, bitmap = null, rotationDegrees = 180, isSelected = false),
+                PdfPageItem(pageIndex = 0, bitmap = null, rotationDegrees = 90, isSelected = false),
+                PdfPageItem(pageIndex = 1, bitmap = null, rotationDegrees = 270, isSelected = false)
+            )
+
+            val reordered = PdfEngine.organizePages(context, source, items, "reordered_rotated_out.pdf")
+            assertNotNull(reordered)
+            assertTrue(reordered!!.exists())
+
+            PDDocument.load(reordered).use { doc ->
+                assertEquals(3, doc.numberOfPages)
+                assertEquals(180, doc.getPage(0).rotation)
+                assertEquals(90, doc.getPage(1).rotation)
+                assertEquals(270, doc.getPage(2).rotation)
+
+                val stripper = com.tom_roush.pdfbox.text.PDFTextStripper()
+                stripper.startPage = 1
+                stripper.endPage = 1
+                val p1Text = stripper.getText(doc).replace(Regex("\\s+"), "")
+                assertTrue("Page 1 text was: $p1Text", p1Text.contains("PAGE_THREE_GAMMA"))
+
+                stripper.startPage = 2
+                stripper.endPage = 2
+                val p2Text = stripper.getText(doc).replace(Regex("\\s+"), "")
+                assertTrue("Page 2 text was: $p2Text", p2Text.contains("PAGE_ONE_ALPHA"))
+
+                stripper.startPage = 3
+                stripper.endPage = 3
+                val p3Text = stripper.getText(doc).replace(Regex("\\s+"), "")
+                assertTrue("Page 3 text was: $p3Text", p3Text.contains("PAGE_TWO_BETA"))
+            }
+
+            source.delete()
+            reordered.delete()
+        }
+    }
+
+    @Test
+    fun testEncryptDecryptRoundTrip128And256Bit() {
+        runBlocking {
+            for (keyBits in listOf(128, 256)) {
+                val source = PdfEngine.createTextPdf(
+                    context = context,
+                    textContent = "Confidential Payload KeyLength=$keyBits",
+                    outputFileName = "roundtrip_src_$keyBits.pdf"
+                )
+                assertNotNull(source)
+
+                val pass = "RoundTrip#$keyBits!Pass"
+                val ownerPass = "Owner#$keyBits!Pass"
+                val protectRes = PdfEngine.protectPdfDetailed(
+                    context = context,
+                    pdfFile = source!!,
+                    userPassword = pass,
+                    confirmPassword = pass,
+                    ownerPassword = ownerPass,
+                    confirmOwnerPassword = ownerPass,
+                    outputName = "roundtrip_enc_$keyBits.pdf",
+                    keyLengthBits = keyBits,
+                    inPlace = false
+                )
+                assertTrue(protectRes is PdfEngine.ProtectResult.Success)
+                val encryptedFile = (protectRes as PdfEngine.ProtectResult.Success).file
+                assertEquals(keyBits, protectRes.keyLengthBits)
+                assertTrue(PdfEngine.checkPasswordProtected(context, encryptedFile))
+
+                val unprotectRes = PdfEngine.removePasswordDetailed(
+                    context = context,
+                    pdfFile = encryptedFile,
+                    currentPassword = pass,
+                    outputName = "roundtrip_dec_$keyBits.pdf",
+                    inPlace = false
+                )
+                assertTrue(unprotectRes is PdfEngine.UnprotectResult.Success)
+                val decryptedFile = (unprotectRes as PdfEngine.UnprotectResult.Success).file
+                assertFalse(PdfEngine.checkPasswordProtected(context, decryptedFile))
+
+                PDDocument.load(decryptedFile).use { doc ->
+                    assertEquals(1, doc.numberOfPages)
+                    val text = com.tom_roush.pdfbox.text.PDFTextStripper().getText(doc)
+                    assertTrue(text.contains("Confidential Payload KeyLength=$keyBits"))
+                }
+
+                source.delete()
+                encryptedFile.delete()
+                decryptedFile.delete()
+            }
+        }
+    }
 }

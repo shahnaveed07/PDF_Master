@@ -22,10 +22,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -78,7 +78,7 @@ fun ManagePagesScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack, modifier = Modifier.testTag("manage_pages_back_button")) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -178,7 +178,7 @@ fun ManagePagesScreen(
                                     .background(MaterialTheme.colorScheme.surface, CircleShape)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.RotateRight,
+                                    imageVector = Icons.AutoMirrored.Filled.RotateRight,
                                     contentDescription = "Rotate",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)

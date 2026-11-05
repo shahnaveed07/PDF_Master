@@ -23,13 +23,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.di.hiltViewModel
+import com.dsc.pdfmaster.ui.adaptive.rememberWindowSizeClass
 import com.dsc.pdfmaster.ui.components.PdfBottomNavigationBar
 import com.dsc.pdfmaster.ui.components.PdfTopAppBar
 import com.dsc.pdfmaster.ui.components.ProcessingDialog
@@ -65,6 +68,7 @@ import com.dsc.pdfmaster.ui.screens.ImagesToPdfScreen
 import com.dsc.pdfmaster.ui.screens.ManagePagesScreen
 import com.dsc.pdfmaster.ui.screens.MergePdfScreen
 import com.dsc.pdfmaster.ui.screens.OcrPdfScreen
+import com.dsc.pdfmaster.ui.screens.OnboardingScreen
 import com.dsc.pdfmaster.ui.screens.PasswordProtectScreen
 import com.dsc.pdfmaster.ui.screens.PdfViewerScreen
 import com.dsc.pdfmaster.ui.screens.RecentFilesScreen
@@ -86,9 +90,12 @@ fun PdfMasterApp(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val destinationRoute = navBackStackEntry?.destination.toScreenRoute()
+    val windowSizeClass = rememberWindowSizeClass()
 
     val currentRoute by viewModel.currentRoute.collectAsState()
     val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val isDynamicColorEnabled by viewModel.isDynamicColorEnabled.collectAsState()
+    val showOnboarding by viewModel.showOnboarding.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
     val processingMessage by viewModel.processingMessage.collectAsState()
     val activeWorkInfo by viewModel.activeWorkInfo.collectAsState()
@@ -184,12 +191,26 @@ fun PdfMasterApp(
 
     val effectiveRoute = destinationRoute ?: currentRoute
 
-    PdfMasterTheme(darkTheme = isDarkMode) {
+    PdfMasterTheme(
+        darkTheme = isDarkMode,
+        dynamicColor = isDynamicColorEnabled
+    ) {
+        if (showOnboarding) {
+            OnboardingScreen(
+                onFinishOnboarding = { viewModel.completeOnboarding() }
+            )
+            return@PdfMasterTheme
+        }
+
         Scaffold(
             topBar = {
                 if (effectiveRoute == ScreenRoute.HOME || effectiveRoute == ScreenRoute.RECENT_FILES) {
                     PdfTopAppBar(
-                        title = if (effectiveRoute == ScreenRoute.HOME) "PDF Master" else "Recent Files",
+                        title = if (effectiveRoute == ScreenRoute.HOME) {
+                            stringResource(R.string.app_name)
+                        } else {
+                            stringResource(R.string.nav_recent_pdfs)
+                        },
                         searchQuery = searchQuery,
                         onSearchQueryChange = { viewModel.setSearchQuery(it) },
                         isDarkMode = isDarkMode,
@@ -221,13 +242,15 @@ fun PdfMasterApp(
                     composable<HomeRoute> {
                         HomeScreen(
                             viewModel = viewModel,
-                            onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) }
+                            onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) },
+                            windowSizeClass = windowSizeClass
                         )
                     }
                     composable<RecentFilesRoute> {
                         RecentFilesScreen(
                             viewModel = viewModel,
-                            onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) }
+                            onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) },
+                            windowSizeClass = windowSizeClass
                         )
                     }
                     composable<PdfViewerRoute> {

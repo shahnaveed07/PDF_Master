@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
@@ -92,7 +92,7 @@ fun SplitPdfScreen(
             title = { Text("Split & Extract Pages", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
             navigationIcon = {
                 IconButton(onClick = onBack, modifier = Modifier.testTag("split_back_button")) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -193,7 +193,7 @@ fun SplitPdfScreen(
                     .testTag("execute_split_button"),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.CallSplit, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Extract Selected Pages", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }

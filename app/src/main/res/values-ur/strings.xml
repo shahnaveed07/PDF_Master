@@ -1,0 +1,125 @@
+<resources>
+    <string name="app_name">PDF Master</string>
+    <string name="brand_subtitle">DARKSKULLCORPORATION</string>
+    <string name="search_placeholder">پی ڈی ایف اور ٹولز تلاش کریں…</string>
+    <string name="cd_pdf_logo">پی ڈی ایف ماسٹر لوگو</string>
+    <string name="cd_search_pdfs">پی ڈی ایف تلاش کریں</string>
+    <string name="cd_clear_search">تلاش صاف کریں</string>
+    <string name="cd_toggle_theme">ڈارک یا لائٹ تھیم تبدیل کریں</string>
+    <string name="cd_navigate_back">واپس جائیں</string>
+    <string name="cd_remove_file">فائل ہٹائیں</string>
+
+    <string name="nav_dashboard">ڈیش بورڈ</string>
+    <string name="nav_recent_pdfs">حالیہ فائلیں</string>
+    <string name="nav_reader">ریڈر</string>
+    <string name="nav_settings">ترتیبات</string>
+
+    <string name="section_quick_actions">فوری اقدامات</string>
+    <string name="section_favorites">پسندیدہ</string>
+    <string name="section_recent_documents">حالیہ دستاویزات</string>
+    <string name="action_see_all">سب دیکھیں</string>
+    <string name="empty_recent_home">کوئی حالیہ پی ڈی ایف نہیں۔ شروع کرنے کے لیے پی ڈی ایف کھولیں یا بنائیں۔</string>
+    <string name="msg_file_unavailable">فائل اب دستیاب نہیں ہے</string>
+    <string name="share_pdf_chooser">پی ڈی ایف شیئر کریں</string>
+
+    <string name="tool_open_pdf_title">پی ڈی ایف کھولیں</string>
+    <string name="tool_open_pdf_subtitle">فائل منتخب کریں</string>
+    <string name="tool_create_pdf_title">پی ڈی ایف بنائیں</string>
+    <string name="tool_create_pdf_subtitle">متن / تصاویر</string>
+    <string name="tool_convert_title">تبدیل کریں</string>
+    <string name="tool_convert_subtitle">آفس / تصاویر / TXT</string>
+    <string name="tool_compress_title">کمپریس کریں</string>
+    <string name="tool_compress_subtitle">سائز کم کریں / بیچ</string>
+    <string name="tool_protect_title">پی ڈی ایف محفوظ کریں</string>
+    <string name="tool_protect_subtitle">256-بٹ AES لاک</string>
+    <string name="tool_unlock_title">پی ڈی ایف ان لاک کریں</string>
+    <string name="tool_unlock_subtitle">پاس ورڈ ہٹائیں</string>
+    <string name="tool_sign_title">دستخط کریں</string>
+    <string name="tool_sign_subtitle">دستخط بنائیں اور شامل کریں</string>
+    <string name="tool_annotate_title">تشریح کریں</string>
+    <string name="tool_annotate_subtitle">ہائی لائٹ، ڈرا اور متن</string>
+    <string name="tool_watermark_title">واٹر مارک</string>
+    <string name="tool_watermark_subtitle">متن اور صفحہ نمبر</string>
+    <string name="tool_ocr_title">OCR پی ڈی ایف</string>
+    <string name="tool_ocr_subtitle">آف لائن قابلِ تلاش متن</string>
+    <string name="tool_scanner_title">ڈاک سکینر</string>
+    <string name="tool_scanner_subtitle">صفحات کو پی ڈی ایف میں سکین کریں</string>
+    <string name="tool_merge_title">پی ڈی ایف ضم کریں</string>
+    <string name="tool_merge_subtitle">متعدد فائلیں ملائیں</string>
+    <string name="tool_split_title">پی ڈی ایف تقسیم کریں</string>
+    <string name="tool_split_subtitle">صفحات الگ کریں</string>
+    <string name="tool_extract_title">صفحات نکالیں</string>
+    <string name="tool_extract_subtitle">مخصوص صفحات محفوظ کریں</string>
+    <string name="tool_images_to_pdf_title">تصاویر سے پی ڈی ایف</string>
+    <string name="tool_images_to_pdf_subtitle">فوٹو کو پی ڈی ایف بنائیں</string>
+    <string name="tool_manage_pages_title">صفحات منظم کریں</string>
+    <string name="tool_manage_pages_subtitle">گھمائیں، ترتیب بدلیں، حذف کریں</string>
+
+    <string name="tab_all_files">تمام فائلیں (%1$d)</string>
+    <string name="tab_favorites_pinned">پسندیدہ / پن شدہ (%1$d)</string>
+    <string name="header_recent_history">حالیہ پی ڈی ایف تاریخچہ</string>
+    <string name="header_favorites_pinned_docs">پسندیدہ اور پن شدہ دستاویزات</string>
+    <string name="header_favorites_pinned">پسندیدہ / پن شدہ</string>
+    <string name="header_all_recent_files">تمام حالیہ فائلیں</string>
+    <string name="action_clear_list">فہرست صاف کریں</string>
+    <string name="empty_recent_files">کوئی حالیہ دستاویز نہیں ملی</string>
+    <string name="empty_recent_files_hint">فوری آف لائن رسائی کے لیے پی ڈی ایف کھولیں، سکین کریں یا بنائیں۔</string>
+    <string name="empty_starred_files">ابھی تک کوئی پسندیدہ یا پن شدہ پی ڈی ایف نہیں</string>
+    <string name="empty_starred_files_hint">اہم دستاویزات کو اوپر رکھنے کے لیے پن یا سٹار کریں۔</string>
+    <string name="two_pane_viewer_placeholder">مطالعہ کے لیے فہرست سے کوئی پی ڈی ایف منتخب کریں۔</string>
+    <string name="dialog_rename_title">پی ڈی ایف کا نام بدلیں</string>
+    <string name="dialog_rename_prompt">نیا فائل نام درج کریں:</string>
+    <string name="action_save">محفوظ کریں</string>
+    <string name="action_cancel">منسوخ کریں</string>
+    <string name="action_close">بند کریں</string>
+    <string name="dialog_delete_title">پی ڈی ایف حذف کریں؟</string>
+    <string name="dialog_delete_message">کیا آپ واقعی \'%1$s\' کو مستقل طور پر حذف کرنا چاہتے ہیں؟</string>
+    <string name="action_delete_permanently">مستقل حذف کریں</string>
+    <string name="dialog_file_info_title">فائل کی معلومات</string>
+    <string name="dialog_clear_recent_title">حالیہ فہرست صاف کریں؟</string>
+    <string name="dialog_clear_recent_message">اس سے صرف فہرست صاف ہوگی، سٹوریج میں فائلیں محفوظ رہیں گی۔</string>
+    <string name="action_clear_all">سب صاف کریں</string>
+
+    <string name="merge_screen_title">پی ڈی ایف ضم کریں</string>
+    <string name="merge_output_name_label">آؤٹ پٹ پی ڈی ایف نام</string>
+    <string name="merge_selected_files_count">منتخب فائلیں (%1$d)</string>
+    <string name="merge_add_pdfs">پی ڈی ایف شامل کریں</string>
+    <string name="merge_empty_title">ضم کرنے کے لیے کوئی پی ڈی ایف منتخب نہیں</string>
+    <string name="merge_empty_subtitle">2 یا زیادہ فائلیں منتخب کرنے کے لیے اوپر ٹیپ کریں۔</string>
+    <string name="merge_execute_button">%1$d پی ڈی ایف فائلیں ضم کریں</string>
+
+    <string name="settings_title">ترتیبات</string>
+    <string name="settings_engine_subtitle">v%1$s • آن ڈیوائس اور نجی انجن</string>
+    <string name="settings_section_preferences">ترجیحات</string>
+    <string name="settings_visual_theme">بصری تھیم</string>
+    <string name="settings_theme_dark">ڈارک تھیم (مونوکروم)</string>
+    <string name="settings_theme_light">لائٹ تھیم (مونوکروم)</string>
+    <string name="settings_theme_system">سسٹم ڈیفالٹ</string>
+    <string name="settings_dynamic_color_title">Material You ڈائنامک رنگ</string>
+    <string name="settings_dynamic_color_subtitle">مونوکروم کے بجائے وال پیپر کے رنگ استعمال کریں</string>
+    <string name="settings_section_privacy">رازداری اور سیکیورٹی</string>
+    <string name="settings_on_device_title">آن ڈیوائس پروسیسنگ</string>
+    <string name="settings_on_device_body">تمام پی ڈی ایف آپریشنز آپ کے فون پر مقامی طور پر ہوتے ہیں۔ کوئی دستاویز آپ کے فون سے باہر نہیں جاتی۔</string>
+    <string name="settings_view_privacy_policy">رازداری کی پالیسی دیکھیں</string>
+    <string name="settings_privacy_policy_title">رازداری کی پالیسی</string>
+    <string name="settings_privacy_policy_body" formatted="false">PDF Master مکمل طور پر آپ کے آلے پر کام کرتا ہے:\n\n• صفر ڈیٹا کلیکشن\n• مقامی پروسیسنگ\n• کوئی کلاؤڈ اپ لوڈ نہیں\n• مکمل آف لائن فعالیت</string>
+    <string name="settings_section_about">تعارف</string>
+    <string name="settings_author">از DarkSkullCorporation</string>
+    <string name="settings_about_description">اینڈرائیڈ پر تیز، قابلِ اعتماد اور نجی پی ڈی ایف ورک فلو کے لیے تیار کردہ۔</string>
+    <string name="settings_version_format">ورژن %1$s</string>
+    <string name="settings_section_data_storage">ڈیٹا اور سٹوریج</string>
+    <string name="settings_clear_recent_history">حالیہ فائلوں کی تاریخ صاف کریں</string>
+    <string name="settings_clear_temp_cache">عارضی کیش فائلیں صاف کریں</string>
+    <string name="settings_replay_onboarding">آن بورڈنگ گائیڈ دوبارہ دیکھیں</string>
+
+    <string name="onboarding_skip">چھوڑیں</string>
+    <string name="onboarding_next">آگے</string>
+    <string name="onboarding_get_started">شروع کریں</string>
+    <string name="onboarding_step_indicator">مرحلہ %1$d از %2$d</string>
+    <string name="onboarding_page1_title" formatted="false">100% آن ڈیوائس اور نجی</string>
+    <string name="onboarding_page1_body">ہر دستاویز آپ کے فون پر رہتی ہے۔ کوئی کلاؤڈ اپ لوڈ نہیں، کوئی ٹریکنگ نہیں اور مکمل رازداری۔</string>
+    <string name="onboarding_page2_title">مکمل پی ڈی ایف اور آفس ٹول کٹ</string>
+    <string name="onboarding_page2_body">ضم کریں، تقسیم کریں، کمپریس کریں، 256-بٹ AES انکرپشن اور DOCX، XLSX، PPTX کو آف لائن تبدیل کریں۔</string>
+    <string name="onboarding_page3_title">دستخط، تشریح، سکین اور OCR</string>
+    <string name="onboarding_page3_body">محفوظ دستخط شامل کریں، صفحات پر نشان لگائیں، دستاویزات سکین کریں اور آف لائن ML Kit OCR سے قابلِ تلاش پی ڈی ایف بنائیں۔</string>
+</resources>

@@ -36,6 +36,7 @@ import dagger.hilt.SingletonComponent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Singleton
 
+@android.annotation.SuppressLint("StaticFieldLeak")
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {

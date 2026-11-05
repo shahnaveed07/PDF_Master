@@ -365,7 +365,7 @@ object PdfAdvancedToolsEngine {
                                 val pdfX = box.lowerLeftX + minNx * pageW
                                 val pdfY = box.lowerLeftY + (1f - maxNy) * pageH
 
-                                val shade = item.grayShade.coerceIn(0, 255)
+                                val shade = item.grayShade.coerceIn(0, 255) / 255f
                                 cs.setNonStrokingColor(shade, shade, shade)
                                 cs.addRect(pdfX, pdfY, rectW, rectH)
                                 cs.fill()
@@ -375,7 +375,7 @@ object PdfAdvancedToolsEngine {
                             is PdfAnnotationItem.Freehand -> {
                                 if (item.points.isNotEmpty()) {
                                     cs.saveGraphicsState()
-                                    val shade = item.grayShade.coerceIn(0, 255)
+                                    val shade = item.grayShade.coerceIn(0, 255) / 255f
                                     cs.setStrokingColor(shade, shade, shade)
                                     cs.setLineWidth(item.strokeWidthPt.coerceIn(1f, 12f))
                                     val first = item.points.first()
@@ -404,7 +404,7 @@ object PdfAdvancedToolsEngine {
                                     val fontSize = item.fontSizePt.coerceIn(8f, 36f)
                                     val pdfX = box.lowerLeftX + item.normalizedX.coerceIn(0.02f, 0.90f) * pageW
                                     val pdfY = box.lowerLeftY + (1f - item.normalizedY.coerceIn(0.05f, 0.95f)) * pageH
-                                    val shade = item.grayShade.coerceIn(0, 255)
+                                    val shade = item.grayShade.coerceIn(0, 255) / 255f
 
                                     cs.beginText()
                                     cs.setFont(PDType1Font.HELVETICA_BOLD, fontSize)
@@ -491,7 +491,7 @@ object PdfAdvancedToolsEngine {
                         cs.setGraphicsStateParameters(extState)
                         val font = PDType1Font.HELVETICA_BOLD
                         val fontSize = watermarkConfig.fontSizePt.coerceIn(12f, 96f)
-                        val shade = watermarkConfig.grayShade.coerceIn(0, 230)
+                        val shade = watermarkConfig.grayShade.coerceIn(0, 230) / 255f
                         cs.setNonStrokingColor(shade, shade, shade)
 
                         val angleRad = Math.toRadians(watermarkConfig.rotationDegrees.toDouble())
@@ -558,7 +558,8 @@ object PdfAdvancedToolsEngine {
 
                         cs.beginText()
                         cs.setFont(font, fontSize)
-                        cs.setNonStrokingColor(40, 40, 40)
+                        val pgShade = 40f / 255f
+                        cs.setNonStrokingColor(pgShade, pgShade, pgShade)
                         cs.newLineAtOffset(xPos, yPos)
                         cs.showText(label)
                         cs.endText()

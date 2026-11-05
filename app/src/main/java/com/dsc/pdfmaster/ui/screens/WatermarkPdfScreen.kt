@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BrandingWatermark
+import androidx.compose.material.icons.automirrored.filled.BrandingWatermark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FormatListNumbered
@@ -166,7 +166,7 @@ fun WatermarkPdfScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.BrandingWatermark, contentDescription = null)
+                            Icon(Icons.AutoMirrored.Filled.BrandingWatermark, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("TEXT WATERMARK", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }

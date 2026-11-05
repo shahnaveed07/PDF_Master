@@ -257,11 +257,7 @@ class PdfWorkManager @Inject constructor(
                 action = ACTION_CANCEL_PDF_WORK
                 putExtra(EXTRA_WORK_ID, info.id)
             }
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             val cancelPendingIntent = PendingIntent.getBroadcast(
                 context,
                 NOTIFICATION_ID,
@@ -302,6 +298,7 @@ class PdfWorkManager @Inject constructor(
         const val ACTION_CANCEL_PDF_WORK = "com.dsc.pdfmaster.action.CANCEL_PDF_WORK"
         const val EXTRA_WORK_ID = "extra_work_id"
 
+        @android.annotation.SuppressLint("StaticFieldLeak")
         @Volatile
         var sharedInstance: PdfWorkManager? = null
     }

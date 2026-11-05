@@ -2,7 +2,7 @@ package com.dsc.pdfmaster.data.model
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallMerge
-import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCut
@@ -62,7 +62,7 @@ val pdfToolsList = listOf(
         type = PdfToolType.SPLIT,
         title = "Split PDF",
         description = "Extract pages or split PDF into custom ranges",
-        icon = Icons.Default.CallSplit,
+        icon = Icons.AutoMirrored.Filled.CallSplit,
         isPopular = true
     ),
     PdfTool(

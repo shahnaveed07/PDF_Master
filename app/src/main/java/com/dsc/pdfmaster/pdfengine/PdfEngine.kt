@@ -3054,99 +3054,108 @@ object PdfEngine {
 
         if (sampleFile.exists() && sampleFile.length() > 0) return@withContext sampleFile
 
-        val pdfDocument = PdfDocument()
+        var pdfDocument: PdfDocument? = null
+        try {
+            pdfDocument = PdfDocument()
 
-        val page1Info = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, 1).create()
-        val page1 = pdfDocument.startPage(page1Info)
-        val canvas1 = page1.canvas
+            val page1Info = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, 1).create()
+            val page1 = pdfDocument.startPage(page1Info)
+            val canvas1 = page1.canvas
 
-        canvas1.drawColor(Color.WHITE)
+            canvas1.drawColor(Color.WHITE)
 
-        val headerPaint = Paint().apply {
-            color = Color.parseColor("#0A0A0D")
-            style = Paint.Style.FILL
+            val headerPaint = Paint().apply {
+                color = Color.parseColor("#0A0A0D")
+                style = Paint.Style.FILL
+            }
+            canvas1.drawRect(0f, 0f, A4_WIDTH.toFloat(), 120f, headerPaint)
+
+            val accentPaint = Paint().apply {
+                color = Color.parseColor("#00E5FF")
+                style = Paint.Style.FILL
+            }
+            canvas1.drawRect(0f, 116f, A4_WIDTH.toFloat(), 120f, accentPaint)
+
+            val titlePaint = Paint().apply {
+                color = Color.WHITE
+                textSize = 28f
+                isFakeBoldText = true
+                isAntiAlias = true
+            }
+            canvas1.drawText("PDF Master - Starter Guide", 30f, 70f, titlePaint)
+
+            val textPaint = Paint().apply {
+                color = Color.parseColor("#212121")
+                textSize = 14f
+                isAntiAlias = true
+            }
+
+            val bodyLines = listOf(
+                "Welcome to PDF Master by DarkSkullCorporation!",
+                "",
+                "Core Features Available in Version 1.0:",
+                "  - Merge PDFs: Combine multiple documents into one single PDF.",
+                "  - Split PDF: Extract specific page ranges quickly.",
+                "  - Compress PDF: Reduce file sizes for easy sharing.",
+                "  - Images to PDF: Convert photos into clean PDF documents.",
+                "  - Organize Pages: Delete, rotate, or reorder pages visually.",
+                "  - Password Protect: Encrypt PDFs with secure passwords.",
+                "  - Fast Reader: High-resolution rendering with zoom & bookmarks.",
+                "",
+                "This sample file is ready to test with any PDF Master tools!"
+            )
+
+            var yPos = 170f
+            for (line in bodyLines) {
+                canvas1.drawText(line, 40f, yPos, textPaint)
+                yPos += 24f
+            }
+
+            pdfDocument.finishPage(page1)
+
+            val page2Info = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, 2).create()
+            val page2 = pdfDocument.startPage(page2Info)
+            val canvas2 = page2.canvas
+
+            canvas2.drawColor(Color.WHITE)
+            canvas2.drawRect(0f, 0f, A4_WIDTH.toFloat(), 60f, headerPaint)
+
+            val header2Paint = Paint().apply {
+                color = Color.WHITE
+                textSize = 20f
+                isFakeBoldText = true
+                isAntiAlias = true
+            }
+            canvas2.drawText("Page 2 - Sample Data Sheet", 30f, 40f, header2Paint)
+
+            val contentLines2 = listOf(
+                "Sample Document Metadata:",
+                "  - Generated Date: " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
+                "  - Engine: PDFBox & Native Android PDF Engine",
+                "  - Security: Local On-Device Encryption & Private Processing",
+                "",
+                "Try merging this sample with another PDF or encrypting it!"
+            )
+
+            yPos = 120f
+            for (line in contentLines2) {
+                canvas2.drawText(line, 40f, yPos, textPaint)
+                yPos += 26f
+            }
+
+            pdfDocument.finishPage(page2)
+
+            FileOutputStream(sampleFile).use { fos ->
+                pdfDocument.writeTo(fos)
+            }
+        } catch (_: Throwable) {
+            sampleFile.delete()
+        } finally {
+            try {
+                pdfDocument?.close()
+            } catch (_: Throwable) {
+            }
         }
-        canvas1.drawRect(0f, 0f, A4_WIDTH.toFloat(), 120f, headerPaint)
-
-        val accentPaint = Paint().apply {
-            color = Color.parseColor("#00E5FF")
-            style = Paint.Style.FILL
-        }
-        canvas1.drawRect(0f, 116f, A4_WIDTH.toFloat(), 120f, accentPaint)
-
-        val titlePaint = Paint().apply {
-            color = Color.WHITE
-            textSize = 28f
-            isFakeBoldText = true
-            isAntiAlias = true
-        }
-        canvas1.drawText("PDF Master - Starter Guide", 30f, 70f, titlePaint)
-
-        val textPaint = Paint().apply {
-            color = Color.parseColor("#212121")
-            textSize = 14f
-            isAntiAlias = true
-        }
-
-        val bodyLines = listOf(
-            "Welcome to PDF Master by DarkSkullCorporation!",
-            "",
-            "Core Features Available in Version 1.0:",
-            "  - Merge PDFs: Combine multiple documents into one single PDF.",
-            "  - Split PDF: Extract specific page ranges quickly.",
-            "  - Compress PDF: Reduce file sizes for easy sharing.",
-            "  - Images to PDF: Convert photos into clean PDF documents.",
-            "  - Organize Pages: Delete, rotate, or reorder pages visually.",
-            "  - Password Protect: Encrypt PDFs with secure passwords.",
-            "  - Fast Reader: High-resolution rendering with zoom & bookmarks.",
-            "",
-            "This sample file is ready to test with any PDF Master tools!"
-        )
-
-        var yPos = 170f
-        for (line in bodyLines) {
-            canvas1.drawText(line, 40f, yPos, textPaint)
-            yPos += 24f
-        }
-
-        pdfDocument.finishPage(page1)
-
-        val page2Info = PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, 2).create()
-        val page2 = pdfDocument.startPage(page2Info)
-        val canvas2 = page2.canvas
-
-        canvas2.drawColor(Color.WHITE)
-        canvas2.drawRect(0f, 0f, A4_WIDTH.toFloat(), 60f, headerPaint)
-
-        val header2Paint = Paint().apply {
-            color = Color.WHITE
-            textSize = 20f
-            isFakeBoldText = true
-            isAntiAlias = true
-        }
-        canvas2.drawText("Page 2 - Sample Data Sheet", 30f, 40f, header2Paint)
-
-        val contentLines2 = listOf(
-            "Sample Document Metadata:",
-            "  - Generated Date: " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
-            "  - Engine: PDFBox & Native Android PDF Engine",
-            "  - Security: Local On-Device Encryption & Private Processing",
-            "",
-            "Try merging this sample with another PDF or encrypting it!"
-        )
-
-        yPos = 120f
-        for (line in contentLines2) {
-            canvas2.drawText(line, 40f, yPos, textPaint)
-            yPos += 26f
-        }
-
-        pdfDocument.finishPage(page2)
-
-        FileOutputStream(sampleFile).use { fos ->
-            pdfDocument.writeTo(fos)
-        }
-        pdfDocument.close()
 
         if (!sampleFile.exists() || sampleFile.length() == 0L || !hasPdfHeader(sampleFile)) {
             PDFBoxResourceLoader.init(context)

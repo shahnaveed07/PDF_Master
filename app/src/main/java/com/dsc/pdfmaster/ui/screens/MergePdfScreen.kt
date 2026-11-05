@@ -14,18 +14,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallMerge
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,9 +46,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import java.io.File
@@ -95,11 +98,24 @@ fun MergePdfScreen(
     ) {
         TopAppBar(
             title = {
-                Text("Merge PDFs", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    text = stringResource(R.string.merge_screen_title),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.semantics { heading() }
+                )
             },
             navigationIcon = {
-                IconButton(onClick = onBack, modifier = Modifier.testTag("merge_back_button")) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("merge_back_button")
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.cd_navigate_back)
+                    )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -110,12 +126,11 @@ fun MergePdfScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            // Output File Name Input
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = outputFileNameInput,
                 onValueChange = { outputFileNameInput = it },
-                label = { Text("Output PDF Name") },
+                label = { Text(stringResource(R.string.merge_output_name_label)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -130,20 +145,27 @@ fun MergePdfScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "SELECTED FILES (${mergeFiles.size})",
+                    text = stringResource(R.string.merge_selected_files_count, mergeFiles.size),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.semantics { heading() }
                 )
 
                 OutlinedButton(
                     onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                    modifier = Modifier.testTag("add_pdf_files_button")
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("add_pdf_files_button")
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = stringResource(R.string.merge_add_pdfs),
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Add PDFs", fontSize = 12.sp)
+                    Text(stringResource(R.string.merge_add_pdfs), fontSize = 12.sp)
                 }
             }
 
@@ -154,21 +176,25 @@ fun MergePdfScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+                        .testTag("merge_empty_state"),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.CallMerge,
-                            contentDescription = null,
+                            contentDescription = stringResource(R.string.merge_screen_title),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(56.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("No PDFs selected for merging", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = stringResource(R.string.merge_empty_title),
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Tap 'Add PDFs' above to pick 2 or more files.",
+                            text = stringResource(R.string.merge_empty_subtitle),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -225,8 +251,16 @@ fun MergePdfScreen(
                                     )
                                 }
 
-                                IconButton(onClick = { viewModel.removeFileFromMerge(file) }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove")
+                                IconButton(
+                                    onClick = { viewModel.removeFileFromMerge(file) },
+                                    modifier = Modifier
+                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                        .testTag("remove_merge_item_$index")
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = stringResource(R.string.cd_remove_file)
+                                    )
                                 }
                             }
                         }
@@ -241,13 +275,20 @@ fun MergePdfScreen(
                 enabled = mergeFiles.size >= 2,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .sizeIn(minWidth = 48.dp, minHeight = 52.dp)
                     .testTag("execute_merge_button"),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.CallMerge, contentDescription = null)
+                Icon(
+                    Icons.AutoMirrored.Filled.CallMerge,
+                    contentDescription = stringResource(R.string.merge_screen_title)
+                )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Merge ${mergeFiles.size} PDF Files Now", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(
+                    text = stringResource(R.string.merge_execute_button, mergeFiles.size),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

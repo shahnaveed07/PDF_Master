@@ -1,0 +1,125 @@
+<resources>
+    <string name="app_name">PDF Master</string>
+    <string name="brand_subtitle">DARKSKULLCORPORATION</string>
+    <string name="search_placeholder">Rechercher des PDF et outils…</string>
+    <string name="cd_pdf_logo">Logo PDF Master</string>
+    <string name="cd_search_pdfs">Rechercher des PDF</string>
+    <string name="cd_clear_search">Effacer la recherche</string>
+    <string name="cd_toggle_theme">Basculer le thème sombre ou clair</string>
+    <string name="cd_navigate_back">Retour</string>
+    <string name="cd_remove_file">Retirer le fichier</string>
+
+    <string name="nav_dashboard">Accueil</string>
+    <string name="nav_recent_pdfs">Récents</string>
+    <string name="nav_reader">Lecteur</string>
+    <string name="nav_settings">Paramètres</string>
+
+    <string name="section_quick_actions">ACTIONS RAPIDES</string>
+    <string name="section_favorites">FAVORIS</string>
+    <string name="section_recent_documents">DOCUMENTS RÉCENTS</string>
+    <string name="action_see_all">Tout voir</string>
+    <string name="empty_recent_home">Aucun PDF récent. Ouvrez ou créez un PDF pour commencer.</string>
+    <string name="msg_file_unavailable">Le fichier n\'est plus disponible</string>
+    <string name="share_pdf_chooser">Partager le PDF via</string>
+
+    <string name="tool_open_pdf_title">Ouvrir PDF</string>
+    <string name="tool_open_pdf_subtitle">Choisir un fichier</string>
+    <string name="tool_create_pdf_title">Créer PDF</string>
+    <string name="tool_create_pdf_subtitle">Texte / Images</string>
+    <string name="tool_convert_title">Convertir</string>
+    <string name="tool_convert_subtitle">Office / Images / TXT</string>
+    <string name="tool_compress_title">Compresser</string>
+    <string name="tool_compress_subtitle">Réduire taille / Lot</string>
+    <string name="tool_protect_title">Protéger PDF</string>
+    <string name="tool_protect_subtitle">Chiffrement AES 256 bits</string>
+    <string name="tool_unlock_title">Déverrouiller PDF</string>
+    <string name="tool_unlock_subtitle">Supprimer mot de passe</string>
+    <string name="tool_sign_title">Signer PDF</string>
+    <string name="tool_sign_subtitle">Dessiner et aplatir signature</string>
+    <string name="tool_annotate_title">Annoter</string>
+    <string name="tool_annotate_subtitle">Surligner, dessiner et texte</string>
+    <string name="tool_watermark_title">Filigrane</string>
+    <string name="tool_watermark_subtitle">Texte et numéros de page</string>
+    <string name="tool_ocr_title">OCR PDF</string>
+    <string name="tool_ocr_subtitle">Texte consultable hors ligne</string>
+    <string name="tool_scanner_title">Scanner Doc</string>
+    <string name="tool_scanner_subtitle">Numériser en PDF</string>
+    <string name="tool_merge_title">Fusionner PDF</string>
+    <string name="tool_merge_subtitle">Combiner plusieurs fichiers</string>
+    <string name="tool_split_title">Diviser PDF</string>
+    <string name="tool_split_subtitle">Extraire des plages</string>
+    <string name="tool_extract_title">Extraire pages</string>
+    <string name="tool_extract_subtitle">Enregistrer pages choisies</string>
+    <string name="tool_images_to_pdf_title">Images en PDF</string>
+    <string name="tool_images_to_pdf_subtitle">Convertir photos en PDF</string>
+    <string name="tool_manage_pages_title">Gérer les pages</string>
+    <string name="tool_manage_pages_subtitle">Pivoter, réorganiser, supprimer</string>
+
+    <string name="tab_all_files">Tous (%1$d)</string>
+    <string name="tab_favorites_pinned">Favoris / Épinglés (%1$d)</string>
+    <string name="header_recent_history">HISTORIQUE DES PDF RÉCENTS</string>
+    <string name="header_favorites_pinned_docs">DOCUMENTS FAVORIS ET ÉPINGLÉS</string>
+    <string name="header_favorites_pinned">FAVORIS / ÉPINGLÉS</string>
+    <string name="header_all_recent_files">TOUS LES FICHIERS RÉCENTS</string>
+    <string name="action_clear_list">Effacer la liste</string>
+    <string name="empty_recent_files">Aucun document récent trouvé</string>
+    <string name="empty_recent_files_hint">Ouvrez, numérisez ou créez un PDF pour un accès rapide hors ligne.</string>
+    <string name="empty_starred_files">Aucun PDF favori ou épinglé pour le moment</string>
+    <string name="empty_starred_files_hint">Épinglez vos documents importants pour les garder en haut.</string>
+    <string name="two_pane_viewer_placeholder">Sélectionnez un PDF dans la liste pour le prévisualiser côte à côte.</string>
+    <string name="dialog_rename_title">Renommer le fichier PDF</string>
+    <string name="dialog_rename_prompt">Entrez un nouveau nom :</string>
+    <string name="action_save">Enregistrer</string>
+    <string name="action_cancel">Annuler</string>
+    <string name="action_close">Fermer</string>
+    <string name="dialog_delete_title">Supprimer le fichier PDF ?</string>
+    <string name="dialog_delete_message">Voulez-vous vraiment supprimer définitivement \'%1$s\' du stockage ?</string>
+    <string name="action_delete_permanently">Supprimer définitivement</string>
+    <string name="dialog_file_info_title">Informations sur le fichier</string>
+    <string name="dialog_clear_recent_title">Effacer l\'historique récent ?</string>
+    <string name="dialog_clear_recent_message">Cela supprimera uniquement l\'historique. Les fichiers stockés resteront intacts.</string>
+    <string name="action_clear_all">Tout effacer</string>
+
+    <string name="merge_screen_title">Fusionner des PDF</string>
+    <string name="merge_output_name_label">Nom du PDF de sortie</string>
+    <string name="merge_selected_files_count">FICHIERS SÉLECTIONNÉS (%1$d)</string>
+    <string name="merge_add_pdfs">Ajouter des PDF</string>
+    <string name="merge_empty_title">Aucun PDF sélectionné pour la fusion</string>
+    <string name="merge_empty_subtitle">Appuyez sur \'Ajouter des PDF\' ci-dessus pour choisir au moins 2 fichiers.</string>
+    <string name="merge_execute_button">Fusionner %1$d fichiers PDF</string>
+
+    <string name="settings_title">Paramètres</string>
+    <string name="settings_engine_subtitle">v%1$s • Moteur privé sur l\'appareil</string>
+    <string name="settings_section_preferences">PRÉFÉRENCES</string>
+    <string name="settings_visual_theme">Thème visuel</string>
+    <string name="settings_theme_dark">Thème sombre (Monochrome)</string>
+    <string name="settings_theme_light">Thème clair (Monochrome)</string>
+    <string name="settings_theme_system">Par défaut du système</string>
+    <string name="settings_dynamic_color_title">Couleur dynamique Material You</string>
+    <string name="settings_dynamic_color_subtitle">Utiliser la palette du fond d\'écran au lieu du monochrome</string>
+    <string name="settings_section_privacy">CONFIDENTIALITÉ ET SÉCURITÉ</string>
+    <string name="settings_on_device_title">Traitement sur l\'appareil</string>
+    <string name="settings_on_device_body">Toutes les opérations PDF sont effectuées localement sur votre appareil Android. Aucun document ne quitte votre téléphone.</string>
+    <string name="settings_view_privacy_policy">Voir la politique de confidentialité</string>
+    <string name="settings_privacy_policy_title">Politique de confidentialité</string>
+    <string name="settings_privacy_policy_body" formatted="false">PDF Master fonctionne entièrement sur votre appareil :\n\n• Aucune collecte de données\n• Traitement local\n• Aucun envoi dans le cloud\n• Fonctionnement 100 % hors ligne</string>
+    <string name="settings_section_about">À PROPOS</string>
+    <string name="settings_author">par DarkSkullCorporation</string>
+    <string name="settings_about_description">Conçu pour des flux de travail PDF rapides, fiables et privés sur Android.</string>
+    <string name="settings_version_format">Version %1$s</string>
+    <string name="settings_section_data_storage">DONNÉES ET STOCKAGE</string>
+    <string name="settings_clear_recent_history">Effacer l\'historique des fichiers récents</string>
+    <string name="settings_clear_temp_cache">Vider le cache temporaire</string>
+    <string name="settings_replay_onboarding">Revoir le guide de bienvenue</string>
+
+    <string name="onboarding_skip">Passer</string>
+    <string name="onboarding_next">Suivant</string>
+    <string name="onboarding_get_started">Commencer</string>
+    <string name="onboarding_step_indicator">Étape %1$d sur %2$d</string>
+    <string name="onboarding_page1_title" formatted="false">100 % Sur l\'appareil et privé</string>
+    <string name="onboarding_page1_body">Chaque document reste sur votre téléphone. Aucun cloud, aucun suivi et aucune autorisation réseau.</string>
+    <string name="onboarding_page2_title">Boîte à outils PDF et Office complète</string>
+    <string name="onboarding_page2_body">Fusionnez, divisez, compressez, chiffrez en AES 256 bits et convertissez DOCX, XLSX et PPTX hors ligne.</string>
+    <string name="onboarding_page3_title">Signez, annotez, numérisez et OCR</string>
+    <string name="onboarding_page3_body">Dessinez des signatures réutilisables, annotez avec annuler/rétablir, numérisez des documents et créez des PDF consultables via OCR hors ligne.</string>
+</resources>
