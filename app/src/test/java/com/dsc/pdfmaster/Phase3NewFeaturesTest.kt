@@ -97,7 +97,7 @@ class Phase3NewFeaturesTest {
         val viewIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(pdfUri1, "application/pdf")
         }
-        val viewPayload = PdfAdvancedToolsEngine.parseIncomingIntent(viewIntent)
+        val viewPayload = PdfAdvancedToolsEngine.parseIncomingIntent(application, viewIntent)
         assertTrue(viewPayload is IncomingIntentPayload.OpenPdf)
         assertEquals(pdfUri1, (viewPayload as IncomingIntentPayload.OpenPdf).uri)
 
@@ -106,7 +106,7 @@ class Phase3NewFeaturesTest {
             type = "application/pdf"
             putExtra(Intent.EXTRA_STREAM, pdfUri1)
         }
-        val sendPdfPayload = PdfAdvancedToolsEngine.parseIncomingIntent(sendPdfIntent)
+        val sendPdfPayload = PdfAdvancedToolsEngine.parseIncomingIntent(application, sendPdfIntent)
         assertTrue(sendPdfPayload is IncomingIntentPayload.ShareSinglePdf)
         assertEquals(pdfUri1, (sendPdfPayload as IncomingIntentPayload.ShareSinglePdf).uri)
 
@@ -115,7 +115,7 @@ class Phase3NewFeaturesTest {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, imgUri1)
         }
-        val sendImgPayload = PdfAdvancedToolsEngine.parseIncomingIntent(sendImageIntent)
+        val sendImgPayload = PdfAdvancedToolsEngine.parseIncomingIntent(application, sendImageIntent)
         assertTrue(sendImgPayload is IncomingIntentPayload.ShareImages)
         assertEquals(listOf(imgUri1), (sendImgPayload as IncomingIntentPayload.ShareImages).uris)
 
@@ -124,7 +124,7 @@ class Phase3NewFeaturesTest {
             type = "application/pdf"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(pdfUri1, pdfUri2))
         }
-        val sendMultiPdfPayload = PdfAdvancedToolsEngine.parseIncomingIntent(sendMultiPdfIntent)
+        val sendMultiPdfPayload = PdfAdvancedToolsEngine.parseIncomingIntent(application, sendMultiPdfIntent)
         assertTrue(sendMultiPdfPayload is IncomingIntentPayload.ShareMultiplePdfs)
         assertEquals(listOf(pdfUri1, pdfUri2), (sendMultiPdfPayload as IncomingIntentPayload.ShareMultiplePdfs).uris)
 
@@ -133,7 +133,7 @@ class Phase3NewFeaturesTest {
             type = "image/*"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(imgUri1, imgUri2))
         }
-        val sendMultiImgPayload = PdfAdvancedToolsEngine.parseIncomingIntent(sendMultiImgIntent)
+        val sendMultiImgPayload = PdfAdvancedToolsEngine.parseIncomingIntent(application, sendMultiImgIntent)
         assertTrue(sendMultiImgPayload is IncomingIntentPayload.ShareImages)
         assertEquals(listOf(imgUri1, imgUri2), (sendMultiImgPayload as IncomingIntentPayload.ShareImages).uris)
     }

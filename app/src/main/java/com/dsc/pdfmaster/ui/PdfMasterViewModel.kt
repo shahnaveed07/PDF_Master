@@ -536,7 +536,7 @@ class PdfMasterViewModel @Inject constructor(
     }
 
     fun handleIncomingIntent(intent: Intent?) {
-        val payload = PdfAdvancedToolsEngine.parseIncomingIntent(intent)
+        val payload = PdfAdvancedToolsEngine.parseIncomingIntent(getApplication(), intent)
         when (payload) {
             is IncomingIntentPayload.OpenPdf -> {
                 importAndSelectPdf(payload.uri, openViewer = true)

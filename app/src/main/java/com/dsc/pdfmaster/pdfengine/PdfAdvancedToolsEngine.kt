@@ -73,15 +73,49 @@ object PdfAdvancedToolsEngine {
     // 1. Open-With and Share Intent Parsing
     // =========================================================================
 
-    fun parseIncomingIntent(intent: Intent?): IncomingIntentPayload {
+    fun parseIncomingIntent(context: Context, intent: Intent?): IncomingIntentPayload {
         if (intent == null) return IncomingIntentPayload.None
         val action = intent.action ?: return IncomingIntentPayload.None
-        val mimeType = intent.type?.lowercase() ?: ""
+        val intentMimeType = intent.type?.lowercase() ?: ""
+
+        fun resolveMimeType(uri: Uri): String {
+            if (intentMimeType.isNotEmpty() && intentMimeType != "application/octet-stream" && intentMimeType != "*/*") return intentMimeType
+            if (uri.scheme == "content") {
+                val resolved = context.contentResolver.getType(uri)?.lowercase()
+                if (!resolved.isNullOrEmpty() && resolved != "application/octet-stream" && resolved != "*/*") return resolved
+            }
+            return intentMimeType
+        }
+
+        fun getDisplayName(uri: Uri): String {
+            if (uri.scheme == "content") {
+                try {
+                    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (idx != -1) return cursor.getString(idx) ?: ""
+                        }
+                    }
+                } catch (e: Exception) {
+                }
+            }
+            return uri.lastPathSegment ?: ""
+        }
+
+        fun isPdf(uri: Uri): Boolean {
+            val resolvedMime = resolveMimeType(uri)
+            if (resolvedMime == "application/pdf") return true
+            
+            val name = getDisplayName(uri).lowercase()
+            if (name.endsWith(".pdf")) return true
+            
+            return false
+        }
 
         return when (action) {
             Intent.ACTION_VIEW -> {
                 val dataUri = intent.data ?: extractClipDataUris(intent).firstOrNull()
-                if (dataUri != null && (mimeType == "application/pdf" || mimeType.isEmpty() || dataUri.toString().lowercase().endsWith(".pdf"))) {
+                if (dataUri != null && isPdf(dataUri)) {
                     IncomingIntentPayload.OpenPdf(dataUri)
                 } else {
                     IncomingIntentPayload.None
@@ -95,9 +129,9 @@ object PdfAdvancedToolsEngine {
                     ?: intent.data
                 if (streamUri == null) {
                     IncomingIntentPayload.None
-                } else if (mimeType.startsWith("image/")) {
+                } else if (intentMimeType.startsWith("image/")) {
                     IncomingIntentPayload.ShareImages(listOf(streamUri))
-                } else if (mimeType == "application/pdf" || streamUri.toString().lowercase().endsWith(".pdf")) {
+                } else if (isPdf(streamUri)) {
                     IncomingIntentPayload.ShareSinglePdf(streamUri)
                 } else {
                     IncomingIntentPayload.None
@@ -113,9 +147,9 @@ object PdfAdvancedToolsEngine {
 
                 if (streamUris.isEmpty()) {
                     IncomingIntentPayload.None
-                } else if (mimeType.startsWith("image/")) {
+                } else if (intentMimeType.startsWith("image/")) {
                     IncomingIntentPayload.ShareImages(streamUris)
-                } else if (mimeType == "application/pdf" || streamUris.all { it.toString().lowercase().endsWith(".pdf") }) {
+                } else if (streamUris.all { isPdf(it) }) {
                     if (streamUris.size == 1) {
                         IncomingIntentPayload.ShareSinglePdf(streamUris.first())
                     } else {
