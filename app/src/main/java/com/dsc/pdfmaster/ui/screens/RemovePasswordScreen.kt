@@ -2,6 +2,8 @@ package com.dsc.pdfmaster.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.theme.Dimens
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +67,7 @@ fun RemovePasswordScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val windowInfo = rememberWindowInfo()
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
     val securityState by viewModel.selectedPdfSecurityState.collectAsState()
     val errorMessage by viewModel.unprotectErrorMessage.collectAsState()
@@ -139,203 +145,413 @@ fun RemovePasswordScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Dimens.Spacing16),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(16.dp)
-            ) {
+            val contentModifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = Dimens.MaxContentWidth)
+
+            if (windowInfo.isExpanded) {
+                // Two-Pane Side-by-Side Layout
                 Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing24)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PictureAsPdf,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
+                    // Left Pane: Document Details
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        RemovePasswordDocumentCard(
+                            currentPdf = currentPdf,
+                            securitySubtitle = securitySubtitle,
+                            isProcessing = isProcessing,
+                            onSelectFile = { filePickerLauncher.launch(arrayOf("application/pdf")) }
+                        )
+
+                        val inlineWarningOrError = errorMessage ?: when (val state = securityState) {
+                            is PdfEngine.PdfSecurityState.UnsupportedEncryption -> state.message
+                            is PdfEngine.PdfSecurityState.InvalidOrCorrupted -> state.message
+                            is PdfEngine.PdfSecurityState.Unencrypted -> "This PDF is already unencrypted. Select a password-protected PDF to remove its security."
+                            else -> null
+                        }
+
+                        if (inlineWarningOrError != null) {
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("remove_password_error_card"),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                                shape = RoundedCornerShape(Dimens.CornerSmall)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(Dimens.Spacing12),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                                    Text(
+                                        text = inlineWarningOrError,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Right Pane: Password Inputs & Execute Button
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "CURRENT SECURITY DETAILS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                letterSpacing = 1.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                            val passwordLabel = when (securityState) {
+                                is PdfEngine.PdfSecurityState.OwnerPasswordRestricted -> "Enter Owner Password"
+                                is PdfEngine.PdfSecurityState.EncryptedWithBlankPassword -> "Password (Optional — Blank Password Supported)"
+                                else -> "Enter Current Password"
+                            }
+
+                            OutlinedTextField(
+                                value = passwordInput,
+                                onValueChange = {
+                                    passwordInput = it
+                                    viewModel.clearUnprotectFeedback()
+                                },
+                                label = { Text(passwordLabel) },
+                                singleLine = true,
+                                enabled = !isProcessing,
+                                visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                        Icon(
+                                            imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Toggle password visibility"
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("current_password_input_field")
+                            )
+
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                            OutlinedTextField(
+                                value = outputNameInput,
+                                onValueChange = {
+                                    outputNameInput = it
+                                    viewModel.clearUnprotectFeedback()
+                                },
+                                label = { Text("Unprotected PDF Name (Save as New)") },
+                                singleLine = true,
+                                enabled = !isProcessing && !replaceOriginal,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("unprotected_output_name_field")
+                            )
+
+                            if (canReplaceOriginalSafely) {
+                                Spacer(modifier = Modifier.height(Dimens.Spacing8))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Checkbox(
+                                        checked = replaceOriginal,
+                                        onCheckedChange = { replaceOriginal = it },
+                                        enabled = !isProcessing,
+                                        modifier = Modifier.testTag("replace_original_checkbox")
+                                    )
+                                    Spacer(modifier = Modifier.width(Dimens.Spacing4))
+                                    Column {
+                                        Text(
+                                            text = "Replace original file instead of saving as new",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Original is only replaced after the unlocked output is verified.",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(Dimens.Spacing24))
+
+                        Button(
+                            onClick = {
+                                val pdf = currentPdf ?: return@Button
+                                viewModel.executeRemovePassword(
+                                    file = pdf,
+                                    password = passwordInput,
+                                    outputName = outputNameInput.trim(),
+                                    replaceOriginal = replaceOriginal && canReplaceOriginalSafely
+                                )
+                            },
+                            enabled = isActionEnabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(Dimens.ButtonHeight)
+                                .testTag("execute_remove_password_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(Icons.Default.LockOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                            Text(
+                                text = if (replaceOriginal && canReplaceOriginalSafely) {
+                                    "Remove Password & Replace Original"
+                                } else {
+                                    "Remove Password & Save as New"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Stacked Vertical Layout
+                Column(
+                    modifier = contentModifier
+                        .padding(vertical = Dimens.Spacing16)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    RemovePasswordDocumentCard(
+                        currentPdf = currentPdf,
+                        securitySubtitle = securitySubtitle,
+                        isProcessing = isProcessing,
+                        onSelectFile = { filePickerLauncher.launch(arrayOf("application/pdf")) }
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+
+                    val inlineWarningOrError = errorMessage ?: when (val state = securityState) {
+                        is PdfEngine.PdfSecurityState.UnsupportedEncryption -> state.message
+                        is PdfEngine.PdfSecurityState.InvalidOrCorrupted -> state.message
+                        is PdfEngine.PdfSecurityState.Unencrypted -> "This PDF is already unencrypted. Select a password-protected PDF to remove its security."
+                        else -> null
+                    }
+
+                    if (inlineWarningOrError != null) {
+                        Spacer(modifier = Modifier.height(Dimens.Spacing12))
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("remove_password_error_card"),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            shape = RoundedCornerShape(Dimens.CornerSmall)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(Dimens.Spacing12),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                                Text(
+                                    text = inlineWarningOrError,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing24))
+
+                    Text(
+                        text = "CURRENT SECURITY DETAILS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 1.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    val passwordLabel = when (securityState) {
+                        is PdfEngine.PdfSecurityState.OwnerPasswordRestricted -> "Enter Owner Password"
+                        is PdfEngine.PdfSecurityState.EncryptedWithBlankPassword -> "Password (Optional — Blank Password Supported)"
+                        else -> "Enter Current Password"
+                    }
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = {
+                            passwordInput = it
+                            viewModel.clearUnprotectFeedback()
+                        },
+                        label = { Text(passwordLabel) },
+                        singleLine = true,
+                        enabled = !isProcessing,
+                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle password visibility"
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("current_password_input_field")
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    OutlinedTextField(
+                        value = outputNameInput,
+                        onValueChange = {
+                            outputNameInput = it
+                            viewModel.clearUnprotectFeedback()
+                        },
+                        label = { Text("Unprotected PDF Name (Save as New)") },
+                        singleLine = true,
+                        enabled = !isProcessing && !replaceOriginal,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("unprotected_output_name_field")
+                    )
+
+                    if (canReplaceOriginalSafely) {
+                        Spacer(modifier = Modifier.height(Dimens.Spacing8))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(
+                                checked = replaceOriginal,
+                                onCheckedChange = { replaceOriginal = it },
+                                enabled = !isProcessing,
+                                modifier = Modifier.testTag("replace_original_checkbox")
+                            )
+                            Spacer(modifier = Modifier.width(Dimens.Spacing4))
+                            Column {
+                                Text(
+                                    text = "Replace original file instead of saving as new",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Original is only replaced after the unlocked output is verified.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing24))
+
+                    Button(
+                        onClick = {
+                            val pdf = currentPdf ?: return@Button
+                            viewModel.executeRemovePassword(
+                                file = pdf,
+                                password = passwordInput,
+                                outputName = outputNameInput.trim(),
+                                replaceOriginal = replaceOriginal && canReplaceOriginalSafely
+                            )
+                        },
+                        enabled = isActionEnabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(Dimens.ButtonHeight)
+                            .testTag("execute_remove_password_button"),
+                        shape = RoundedCornerShape(Dimens.CornerMedium)
+                    ) {
+                        Icon(Icons.Default.LockOpen, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Dimens.Spacing8))
                         Text(
-                            text = currentPdf?.name ?: "No PDF Selected",
+                            text = if (replaceOriginal && canReplaceOriginalSafely) {
+                                "Remove Password & Replace Original"
+                            } else {
+                                "Remove Password & Save as New"
+                            },
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
-                        Text(
-                            text = securitySubtitle,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                        enabled = !isProcessing,
-                        modifier = Modifier.testTag("remove_password_select_file_button")
-                    ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Select", fontSize = 12.sp)
                     }
                 }
             }
+        }
+    }
+}
 
-            val inlineWarningOrError = errorMessage ?: when (val state = securityState) {
-                is PdfEngine.PdfSecurityState.UnsupportedEncryption -> state.message
-                is PdfEngine.PdfSecurityState.InvalidOrCorrupted -> state.message
-                is PdfEngine.PdfSecurityState.Unencrypted -> "This PDF is already unencrypted. Select a password-protected PDF to remove its security."
-                else -> null
-            }
-
-            if (inlineWarningOrError != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("remove_password_error_card"),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ErrorOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = inlineWarningOrError,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = "CURRENT SECURITY DETAILS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
+@Composable
+private fun RemovePasswordDocumentCard(
+    currentPdf: java.io.File?,
+    securitySubtitle: String,
+    isProcessing: Boolean,
+    onSelectFile: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(Dimens.CornerMedium)
+    ) {
+        Row(
+            modifier = Modifier.padding(Dimens.Spacing16),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.PictureAsPdf,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(40.dp)
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            val passwordLabel = when (securityState) {
-                is PdfEngine.PdfSecurityState.OwnerPasswordRestricted -> "Enter Owner Password"
-                is PdfEngine.PdfSecurityState.EncryptedWithBlankPassword -> "Password (Optional — Blank Password Supported)"
-                else -> "Enter Current Password"
-            }
-
-            OutlinedTextField(
-                value = passwordInput,
-                onValueChange = {
-                    passwordInput = it
-                    viewModel.clearUnprotectFeedback()
-                },
-                label = { Text(passwordLabel) },
-                singleLine = true,
-                enabled = !isProcessing,
-                visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
-                        Icon(
-                            imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = "Toggle password visibility"
-                        )
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("current_password_input_field")
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = outputNameInput,
-                onValueChange = {
-                    outputNameInput = it
-                    viewModel.clearUnprotectFeedback()
-                },
-                label = { Text("Unprotected PDF Name (Save as New)") },
-                singleLine = true,
-                enabled = !isProcessing && !replaceOriginal,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("unprotected_output_name_field")
-            )
-
-            if (canReplaceOriginalSafely) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Checkbox(
-                        checked = replaceOriginal,
-                        onCheckedChange = { replaceOriginal = it },
-                        enabled = !isProcessing,
-                        modifier = Modifier.testTag("replace_original_checkbox")
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Column {
-                        Text(
-                            text = "Replace original file instead of saving as new",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Original is only replaced after the unlocked output is verified.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Button(
-                onClick = {
-                    val pdf = currentPdf ?: return@Button
-                    viewModel.executeRemovePassword(
-                        file = pdf,
-                        password = passwordInput,
-                        outputName = outputNameInput.trim(),
-                        replaceOriginal = replaceOriginal && canReplaceOriginalSafely
-                    )
-                },
-                enabled = isActionEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("execute_remove_password_button"),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.LockOpen, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(Dimens.Spacing12))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (replaceOriginal && canReplaceOriginalSafely) {
-                        "Remove Password & Replace Original"
-                    } else {
-                        "Remove Password & Save as New"
-                    },
+                    text = currentPdf?.name ?: "No PDF Selected",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
+                Text(
+                    text = securitySubtitle,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            OutlinedButton(
+                onClick = onSelectFile,
+                enabled = !isProcessing,
+                modifier = Modifier.testTag("remove_password_select_file_button"),
+                shape = RoundedCornerShape(Dimens.CornerMedium)
+            ) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Select", fontSize = 12.sp)
             }
         }
     }

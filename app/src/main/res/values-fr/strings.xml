@@ -17,6 +17,10 @@
     <string name="section_quick_actions">ACTIONS RAPIDES</string>
     <string name="section_favorites">FAVORIS</string>
     <string name="section_recent_documents">DOCUMENTS RÉCENTS</string>
+    <string name="section_organize_tools">ORGANISER ET GÉRER</string>
+    <string name="section_optimize_tools">OPTIMISER ET COMPRIMER</string>
+    <string name="section_create_convert_tools">CRÉER ET CONVERTIR</string>
+    <string name="section_security_tools">SÉCURITÉ ET OUTILS</string>
     <string name="action_see_all">Tout voir</string>
     <string name="empty_recent_home">Aucun PDF récent. Ouvrez ou créez un PDF pour commencer.</string>
     <string name="msg_file_unavailable">Le fichier n\'est plus disponible</string>

@@ -17,6 +17,10 @@
     <string name="section_quick_actions">إجراءات سريعة</string>
     <string name="section_favorites">المفضلة</string>
     <string name="section_recent_documents">المستندات الأخيرة</string>
+    <string name="section_organize_tools">التنظيم والإدارة</string>
+    <string name="section_optimize_tools">التحسين والضغط</string>
+    <string name="section_create_convert_tools">إنشاء وتحويل</string>
+    <string name="section_security_tools">الأمان والأدوات</string>
     <string name="action_see_all">عرض الكل</string>
     <string name="empty_recent_home">لا توجد ملفات PDF حديثة. افتح أو أنشئ ملف PDF للبدء.</string>
     <string name="msg_file_unavailable">الملف لم يعد متاحاً</string>

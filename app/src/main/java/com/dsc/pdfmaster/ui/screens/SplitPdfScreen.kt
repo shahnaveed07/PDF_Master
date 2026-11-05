@@ -2,7 +2,6 @@ package com.dsc.pdfmaster.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
@@ -49,10 +51,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.theme.Dimens
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +64,7 @@ fun SplitPdfScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val windowInfo = rememberWindowInfo()
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
 
     var totalPages by remember { mutableIntStateOf(1) }
@@ -98,110 +101,231 @@ fun SplitPdfScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = Dimens.Spacing16),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Document Selection Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(16.dp)
-            ) {
+            val contentModifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = Dimens.MaxContentWidth)
+
+            if (windowInfo.isExpanded) {
+                // Two-Pane Layout on Expanded
                 Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing24)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PictureAsPdf,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    // Left Pane: Selected File Preview
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentPdf?.name ?: "No PDF Selected",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                        Text(
-                            text = if (currentPdf != null) "Total Pages: $totalPages" else "Pick a file to split",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(Dimens.Spacing16),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Dimens.Spacing12))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = currentPdf?.name ?: "No PDF Selected",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Text(
+                                        text = if (currentPdf != null) "Total Pages: $totalPages" else "Pick a file to split",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                                    modifier = Modifier.testTag("split_select_file_button"),
+                                    shape = RoundedCornerShape(Dimens.CornerMedium)
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(Dimens.Spacing4))
+                                    Text("Change", fontSize = 12.sp)
+                                }
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                        modifier = Modifier.testTag("split_select_file_button")
+
+                    // Right Pane: Split Options & Execute
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Change", fontSize = 12.sp)
+                        Column {
+                            Text(
+                                text = "SPLIT CONFIGURATION",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                            OutlinedTextField(
+                                value = pageRangeInput,
+                                onValueChange = { pageRangeInput = it },
+                                label = { Text("Page Range (e.g. 1-3, 5, 7-10)") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("page_range_input_field")
+                            )
+
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                            OutlinedTextField(
+                                value = outputNameInput,
+                                onValueChange = { outputNameInput = it },
+                                label = { Text("Output PDF File Name") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("split_output_name_field")
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                val indices = parsePageRange(pageRangeInput, totalPages)
+                                if (currentPdf != null) {
+                                    viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
+                                }
+                            },
+                            enabled = currentPdf != null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(Dimens.ButtonHeight)
+                                .testTag("execute_split_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null)
+                            Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                            Text("Extract Selected Pages", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = "SPLIT CONFIGURATION",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedTextField(
-                value = pageRangeInput,
-                onValueChange = { pageRangeInput = it },
-                label = { Text("Page Range (e.g. 1-3, 5, 7-10)") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("page_range_input_field")
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = outputNameInput,
-                onValueChange = { outputNameInput = it },
-                label = { Text("Output PDF File Name") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("split_output_name_field")
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = {
-                    val indices = parsePageRange(pageRangeInput, totalPages)
-                    if (currentPdf != null) {
-                        viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
+            } else {
+                // Stacked Vertical Scroll Layout
+                Column(
+                    modifier = contentModifier
+                        .padding(vertical = Dimens.Spacing16)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(Dimens.CornerMedium)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(Dimens.Spacing16),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PictureAsPdf,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.width(Dimens.Spacing12))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = currentPdf?.name ?: "No PDF Selected",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = if (currentPdf != null) "Total Pages: $totalPages" else "Pick a file to split",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                                modifier = Modifier.testTag("split_select_file_button"),
+                                shape = RoundedCornerShape(Dimens.CornerMedium)
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(Dimens.Spacing4))
+                                Text("Change", fontSize = 12.sp)
+                            }
+                        }
                     }
-                },
-                enabled = currentPdf != null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("execute_split_button"),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Extract Selected Pages", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing24))
+
+                    Text(
+                        text = "SPLIT CONFIGURATION",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        letterSpacing = 1.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    OutlinedTextField(
+                        value = pageRangeInput,
+                        onValueChange = { pageRangeInput = it },
+                        label = { Text("Page Range (e.g. 1-3, 5, 7-10)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("page_range_input_field")
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    OutlinedTextField(
+                        value = outputNameInput,
+                        onValueChange = { outputNameInput = it },
+                        label = { Text("Output PDF File Name") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("split_output_name_field")
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing32))
+
+                    Button(
+                        onClick = {
+                            val indices = parsePageRange(pageRangeInput, totalPages)
+                            if (currentPdf != null) {
+                                viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
+                            }
+                        },
+                        enabled = currentPdf != null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(Dimens.ButtonHeight)
+                            .testTag("execute_split_button"),
+                        shape = RoundedCornerShape(Dimens.CornerMedium)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                        Text("Extract Selected Pages", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
             }
         }
     }
 }
 
-// Helper to parse page range input string like "1-3, 5, 7-10" into 0-indexed page integers
 private fun parsePageRange(rangeStr: String, maxPages: Int): List<Int> {
     val result = mutableSetOf<Int>()
     try {

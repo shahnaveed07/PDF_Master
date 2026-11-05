@@ -17,6 +17,10 @@
     <string name="section_quick_actions">فوری اقدامات</string>
     <string name="section_favorites">پسندیدہ</string>
     <string name="section_recent_documents">حالیہ دستاویزات</string>
+    <string name="section_organize_tools">تنظيم اور انتظام</string>
+    <string name="section_optimize_tools">بہتری اور کمپریس</string>
+    <string name="section_create_convert_tools">تخلیق اور تبدیل</string>
+    <string name="section_security_tools">سیکیورٹی اور ٹولز</string>
     <string name="action_see_all">سب دیکھیں</string>
     <string name="empty_recent_home">کوئی حالیہ پی ڈی ایف نہیں۔ شروع کرنے کے لیے پی ڈی ایف کھولیں یا بنائیں۔</string>
     <string name="msg_file_unavailable">فائل اب دستیاب نہیں ہے</string>

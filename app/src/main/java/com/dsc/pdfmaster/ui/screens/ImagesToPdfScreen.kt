@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddAPhoto
@@ -27,8 +30,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.theme.Dimens
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +65,7 @@ fun ImagesToPdfScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val windowInfo = rememberWindowInfo()
     val selectedUris by viewModel.selectedImageUris.collectAsState()
     var outputNameInput by remember { mutableStateOf("Photos_Doc_${System.currentTimeMillis() / 1000}.pdf") }
 
@@ -84,138 +88,248 @@ fun ImagesToPdfScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = Dimens.Spacing16),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = outputNameInput,
-                onValueChange = { outputNameInput = it },
-                label = { Text("Output PDF Document Name") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("images_to_pdf_name_input")
-            )
+            val contentModifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = Dimens.MaxContentWidth)
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "SELECTED IMAGES (${selectedUris.size})",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp
-                )
-
-                OutlinedButton(
-                    onClick = { imagePickerLauncher.launch("image/*") },
-                    modifier = Modifier.testTag("add_photos_button")
+            if (windowInfo.isExpanded) {
+                // Two-Pane Layout
+                Row(
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing24)
                 ) {
-                    Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Add Photos", fontSize = 12.sp)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (selectedUris.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Image,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(56.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("No photos selected", fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Tap 'Add Photos' to pick JPG/PNG images to convert.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(selectedUris) { index, uri ->
-                        Box(
-                            modifier = Modifier
-                                .height(120.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .testTag("image_preview_$index")
+                    // Left Pane: Image Preview Grid / Empty
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AsyncImage(
-                                model = uri,
-                                contentDescription = "Image ${index + 1}",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                            Text(
+                                text = "SELECTED IMAGES (${selectedUris.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
                             )
-                            IconButton(
-                                onClick = { viewModel.removeImageForPdf(uri) },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(24.dp)
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+
+                            OutlinedButton(
+                                onClick = { imagePickerLauncher.launch("image/*") },
+                                modifier = Modifier.testTag("add_photos_button"),
+                                shape = RoundedCornerShape(Dimens.CornerMedium)
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Photos", fontSize = 12.sp)
                             }
-                            Box(
+                        }
+
+                        Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                        if (selectedUris.isEmpty()) {
+                            ImagesEmptyStateCard(modifier = Modifier.weight(1f))
+                        } else {
+                            ImagesGrid(
+                                selectedUris = selectedUris,
+                                onRemoveImage = { viewModel.removeImageForPdf(it) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // Right Pane: Options & Action
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "DOCUMENT CONFIGURATION",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+                            OutlinedTextField(
+                                value = outputNameInput,
+                                onValueChange = { outputNameInput = it },
+                                label = { Text("Output PDF Document Name") },
+                                singleLine = true,
                                 modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(4.dp)
-                                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("${index + 1}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                            }
+                                    .fillMaxWidth()
+                                    .testTag("images_to_pdf_name_input")
+                            )
+                        }
+
+                        Button(
+                            onClick = { viewModel.executeImagesToPdf(outputNameInput.trim()) },
+                            enabled = selectedUris.isNotEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(Dimens.ButtonHeight)
+                                .testTag("execute_images_to_pdf_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null)
+                            Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                            Text("Convert ${selectedUris.size} Images to PDF", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }
+            } else {
+                // Stacked Vertical Layout
+                Column(
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16)
+                ) {
+                    OutlinedTextField(
+                        value = outputNameInput,
+                        onValueChange = { outputNameInput = it },
+                        label = { Text("Output PDF Document Name") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("images_to_pdf_name_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing16))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "SELECTED IMAGES (${selectedUris.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 1.sp
+                        )
+
+                        OutlinedButton(
+                            onClick = { imagePickerLauncher.launch("image/*") },
+                            modifier = Modifier.testTag("add_photos_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Photos", fontSize = 12.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    if (selectedUris.isEmpty()) {
+                        ImagesEmptyStateCard(modifier = Modifier.weight(1f))
+                    } else {
+                        ImagesGrid(
+                            selectedUris = selectedUris,
+                            onRemoveImage = { viewModel.removeImageForPdf(it) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    Button(
+                        onClick = { viewModel.executeImagesToPdf(outputNameInput.trim()) },
+                        enabled = selectedUris.isNotEmpty(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(Dimens.ButtonHeight)
+                            .testTag("execute_images_to_pdf_button"),
+                        shape = RoundedCornerShape(Dimens.CornerMedium)
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                        Text("Convert ${selectedUris.size} Images to PDF", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(12.dp))
+@Composable
+private fun ImagesEmptyStateCard(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(Dimens.CornerMedium)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(56.dp)
+            )
+            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+            Text("No photos selected", fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(Dimens.Spacing4))
+            Text(
+                "Tap 'Add Photos' to pick JPG/PNG images to convert.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
-            Button(
-                onClick = { viewModel.executeImagesToPdf(outputNameInput.trim()) },
-                enabled = selectedUris.isNotEmpty(),
+@Composable
+private fun ImagesGrid(
+    selectedUris: List<Uri>,
+    onRemoveImage: (Uri) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(110.dp),
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(vertical = Dimens.Spacing8),
+        horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing8),
+        verticalArrangement = Arrangement.spacedBy(Dimens.Spacing8)
+    ) {
+        itemsIndexed(selectedUris) { index, uri ->
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("execute_images_to_pdf_button"),
-                shape = RoundedCornerShape(12.dp)
+                    .height(120.dp)
+                    .clip(RoundedCornerShape(Dimens.CornerSmall))
+                    .testTag("image_preview_$index")
             ) {
-                Icon(Icons.Default.PictureAsPdf, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Convert ${selectedUris.size} Images to PDF", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                AsyncImage(
+                    model = uri,
+                    contentDescription = "Image ${index + 1}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                IconButton(
+                    onClick = { onRemoveImage(uri) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(24.dp)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(4.dp)
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("${index + 1}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

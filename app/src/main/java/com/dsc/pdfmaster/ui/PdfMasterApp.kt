@@ -7,8 +7,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -34,6 +36,8 @@ import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.di.hiltViewModel
 import com.dsc.pdfmaster.ui.adaptive.rememberWindowSizeClass
 import com.dsc.pdfmaster.ui.components.PdfBottomNavigationBar
+import com.dsc.pdfmaster.ui.components.PdfNavigationDrawerContent
+import com.dsc.pdfmaster.ui.components.PdfNavigationRail
 import com.dsc.pdfmaster.ui.components.PdfTopAppBar
 import com.dsc.pdfmaster.ui.components.ProcessingDialog
 import com.dsc.pdfmaster.ui.navigation.AnnotatePdfRoute
@@ -78,6 +82,7 @@ import com.dsc.pdfmaster.ui.screens.SignPdfScreen
 import com.dsc.pdfmaster.ui.screens.SplitPdfScreen
 import com.dsc.pdfmaster.ui.screens.WatermarkPdfScreen
 import com.dsc.pdfmaster.ui.theme.PdfMasterTheme
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 import kotlinx.coroutines.launch
 
 @Composable
@@ -91,6 +96,7 @@ fun PdfMasterApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val destinationRoute = navBackStackEntry?.destination.toScreenRoute()
     val windowSizeClass = rememberWindowSizeClass()
+    val windowInfo = rememberWindowInfo()
 
     val currentRoute by viewModel.currentRoute.collectAsState()
     val isDarkMode by viewModel.isDarkMode.collectAsState()
@@ -190,6 +196,7 @@ fun PdfMasterApp(
     }
 
     val effectiveRoute = destinationRoute ?: currentRoute
+    val showNav = effectiveRoute in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)
 
     PdfMasterTheme(
         darkTheme = isDarkMode,
@@ -202,168 +209,196 @@ fun PdfMasterApp(
             return@PdfMasterTheme
         }
 
-        Scaffold(
-            topBar = {
-                if (effectiveRoute == ScreenRoute.HOME || effectiveRoute == ScreenRoute.RECENT_FILES) {
-                    PdfTopAppBar(
-                        title = if (effectiveRoute == ScreenRoute.HOME) {
-                            stringResource(R.string.app_name)
-                        } else {
-                            stringResource(R.string.nav_recent_pdfs)
-                        },
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                        isDarkMode = isDarkMode,
-                        onToggleDarkMode = { viewModel.toggleDarkMode(it) }
-                    )
+        @Composable
+        fun AppScaffoldContent() {
+            Scaffold(
+                topBar = {
+                    if (effectiveRoute == ScreenRoute.HOME || effectiveRoute == ScreenRoute.RECENT_FILES) {
+                        PdfTopAppBar(
+                            title = if (effectiveRoute == ScreenRoute.HOME) {
+                                stringResource(R.string.app_name)
+                            } else {
+                                stringResource(R.string.nav_recent_pdfs)
+                            },
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                            isDarkMode = isDarkMode,
+                            onToggleDarkMode = { viewModel.toggleDarkMode(it) }
+                        )
+                    }
+                },
+                bottomBar = {
+                    if (showNav && windowInfo.isCompact) {
+                        PdfBottomNavigationBar(
+                            currentRoute = effectiveRoute,
+                            onNavigate = { route -> viewModel.navigateTo(route) }
+                        )
+                    }
+                },
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                modifier = Modifier.fillMaxSize()
+            ) { innerPadding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = HomeRoute,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        composable<HomeRoute> {
+                            HomeScreen(
+                                viewModel = viewModel,
+                                onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) },
+                                windowSizeClass = windowSizeClass
+                            )
+                        }
+                        composable<RecentFilesRoute> {
+                            RecentFilesScreen(
+                                viewModel = viewModel,
+                                onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) },
+                                windowSizeClass = windowSizeClass
+                            )
+                        }
+                        composable<PdfViewerRoute> {
+                            PdfViewerScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<CreatePdfRoute> {
+                            CreatePdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<ConvertPdfRoute> {
+                            ConvertPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<RemovePasswordRoute> {
+                            RemovePasswordScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<ExtractPagesRoute> {
+                            ExtractPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<MergePdfRoute> {
+                            MergePdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<SplitPdfRoute> {
+                            SplitPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<CompressPdfRoute> {
+                            CompressPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<ImagesToPdfRoute> {
+                            ImagesToPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<ManagePagesRoute> {
+                            ManagePagesScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<PasswordProtectRoute> {
+                            PasswordProtectScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<SignPdfRoute> {
+                            SignPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<AnnotatePdfRoute> {
+                            AnnotatePdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<WatermarkPdfRoute> {
+                            WatermarkPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<OcrPdfRoute> {
+                            OcrPdfScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<DocumentScannerRoute> {
+                            DocumentScannerScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                        composable<SettingsRoute> {
+                            SettingsScreen(
+                                viewModel = viewModel,
+                                onBack = { viewModel.navigateBack() }
+                            )
+                        }
+                    }
+
+                    if (isProcessing && effectiveRoute != ScreenRoute.HOME) {
+                        ProcessingDialog(
+                            message = processingMessage,
+                            onDismissRequest = { viewModel.resetProcessingState() }
+                        )
+                    }
                 }
-            },
-            bottomBar = {
-                if (effectiveRoute in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
-                    PdfBottomNavigationBar(
+            }
+        }
+
+        if (showNav && windowInfo.isExpanded) {
+            PermanentNavigationDrawer(
+                drawerContent = {
+                    PdfNavigationDrawerContent(
                         currentRoute = effectiveRoute,
                         onNavigate = { route -> viewModel.navigateTo(route) }
                     )
                 }
-            },
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            modifier = Modifier.fillMaxSize()
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
             ) {
-                NavHost(
-                    navController = navController,
-                    startDestination = HomeRoute,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    composable<HomeRoute> {
-                        HomeScreen(
-                            viewModel = viewModel,
-                            onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) },
-                            windowSizeClass = windowSizeClass
-                        )
-                    }
-                    composable<RecentFilesRoute> {
-                        RecentFilesScreen(
-                            viewModel = viewModel,
-                            onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) },
-                            windowSizeClass = windowSizeClass
-                        )
-                    }
-                    composable<PdfViewerRoute> {
-                        PdfViewerScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<CreatePdfRoute> {
-                        CreatePdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<ConvertPdfRoute> {
-                        ConvertPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<RemovePasswordRoute> {
-                        RemovePasswordScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<ExtractPagesRoute> {
-                        ExtractPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<MergePdfRoute> {
-                        MergePdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<SplitPdfRoute> {
-                        SplitPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<CompressPdfRoute> {
-                        CompressPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<ImagesToPdfRoute> {
-                        ImagesToPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<ManagePagesRoute> {
-                        ManagePagesScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<PasswordProtectRoute> {
-                        PasswordProtectScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<SignPdfRoute> {
-                        SignPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<AnnotatePdfRoute> {
-                        AnnotatePdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<WatermarkPdfRoute> {
-                        WatermarkPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<OcrPdfRoute> {
-                        OcrPdfScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<DocumentScannerRoute> {
-                        DocumentScannerScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                    composable<SettingsRoute> {
-                        SettingsScreen(
-                            viewModel = viewModel,
-                            onBack = { viewModel.navigateBack() }
-                        )
-                    }
-                }
-
-                if (isProcessing && effectiveRoute != ScreenRoute.HOME) {
-                    ProcessingDialog(
-                        message = processingMessage,
-                        onDismissRequest = { viewModel.resetProcessingState() }
-                    )
+                AppScaffoldContent()
+            }
+        } else if (showNav && windowInfo.isMedium) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                PdfNavigationRail(
+                    currentRoute = effectiveRoute,
+                    onNavigate = { route -> viewModel.navigateTo(route) }
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    AppScaffoldContent()
                 }
             }
+        } else {
+            AppScaffoldContent()
         }
     }
 }

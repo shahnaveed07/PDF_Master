@@ -9,14 +9,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -88,15 +91,21 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.pdfengine.PdfAdvancedToolsEngine
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.ScreenRoute
+import com.dsc.pdfmaster.ui.theme.Dimens
+import com.dsc.pdfmaster.ui.util.FormFactorPreviews
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -111,6 +120,7 @@ fun PdfViewerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val windowInfo = rememberWindowInfo()
     val currentPdfFile by viewModel.selectedPdfFile.collectAsState()
     val isNightMode by viewModel.viewerNightMode.collectAsState()
     val searchMatches by viewModel.viewerSearchMatches.collectAsState()
@@ -382,7 +392,7 @@ fun PdfViewerScreen(
                         leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                         onClick = {
                             showOverflowMenu = false
-                            currentPdfFile?.let { sharePdfFile(context, it) }
+                            currentPdfFile?.let { sharePdfFile(context, it, context.getString(R.string.share_pdf_chooser)) }
                         }
                     )
 
@@ -679,103 +689,202 @@ fun PdfViewerScreen(
                     .weight(1f)
                     .background(if (isNightMode) Color(0xFF0A0A0A) else MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                LazyColumn(
-                    state = lazyListState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(count = pageCount, key = { index -> index }) { index ->
-                        val file = currentPdfFile
-                        val bitmap by produceState<Bitmap?>(
-                            initialValue = file?.let {
-                                viewModel.bitmapCache.get(it, index, displayTargetWidth)
-                            },
-                            key1 = file?.absolutePath,
-                            key2 = index,
-                            key3 = verifiedPassword
-                        ) {
-                            if (value == null && file != null) {
-                                value = withContext(Dispatchers.IO) {
-                                    PdfEngine.renderPageBitmap(
-                                        context = context,
-                                        pdfFile = file,
-                                        pageIndex = index,
-                                        targetWidth = displayTargetWidth,
-                                        password = verifiedPassword,
-                                        useCache = true,
-                                        bitmapCache = viewModel.bitmapCache
-                                    )
-                                }
-                            }
-                        }
-
-                        Card(
+                Row(modifier = Modifier.fillMaxSize()) {
+                    if (windowInfo.isExpanded && pageCount > 0) {
+                        // Collapsible Thumbnail Sidebar on Expanded Width Screens
+                        Surface(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("pdf_page_card_$index"),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isNightMode) Color(0xFF141414) else Color.White
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                                .width(130.dp)
+                                .fillMaxHeight(),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 4.dp
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                val bmp = bitmap
-                                if (bmp != null && !bmp.isRecycled) {
-                                    Image(
-                                        bitmap = bmp.asImageBitmap(),
-                                        contentDescription = "PDF Page ${index + 1}",
-                                        colorFilter = nightInvertColorFilter,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                } else {
-                                    Box(
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(count = pageCount, key = { "thumb_$it" }) { idx ->
+                                    val file = currentPdfFile
+                                    val thumbBmp by produceState<Bitmap?>(
+                                        initialValue = file?.let { viewModel.bitmapCache.get(it, idx, 160) },
+                                        key1 = file?.absolutePath,
+                                        key2 = idx
+                                    ) {
+                                        if (value == null && file != null) {
+                                            value = withContext(Dispatchers.IO) {
+                                                PdfEngine.renderPageBitmap(
+                                                    context = context,
+                                                    pdfFile = file,
+                                                    pageIndex = idx,
+                                                    targetWidth = 160,
+                                                    password = verifiedPassword,
+                                                    useCache = true,
+                                                    bitmapCache = viewModel.bitmapCache
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(300.dp),
-                                        contentAlignment = Alignment.Center
+                                            .clickable {
+                                                scope.launch { lazyListState.scrollToItem(idx) }
+                                            },
+                                        shape = RoundedCornerShape(Dimens.CornerSmall),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (lazyListState.firstVisibleItemIndex == idx) {
+                                                MaterialTheme.colorScheme.primaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                            }
+                                        )
                                     ) {
-                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.padding(4.dp)
+                                        ) {
+                                            val tb = thumbBmp
+                                            if (tb != null && !tb.isRecycled) {
+                                                Image(
+                                                    bitmap = tb.asImageBitmap(),
+                                                    contentDescription = "Thumbnail ${idx + 1}",
+                                                    colorFilter = nightInvertColorFilter,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(110.dp)
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(110.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                            Text(
+                                                text = "${idx + 1}",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
                                     }
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(if (isNightMode) Color(0xFF1F1F1F) else Color(0xFFF0F0F0))
-                                        .padding(vertical = 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Page ${index + 1} of $pageCount",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isNightMode) Color.LightGray else Color.DarkGray
-                                    )
                                 }
                             }
                         }
                     }
-                }
 
-                // Page Indicator Float Badge
-                val firstVisibleItem = lazyListState.firstVisibleItemIndex
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
-                    shadowElevation = 6.dp,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp)
-                ) {
-                    Text(
-                        text = "${firstVisibleItem + 1} / $pageCount",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize(),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        LazyColumn(
+                            state = lazyListState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .widthIn(max = Dimens.MaxContentWidth)
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            items(count = pageCount, key = { index -> index }) { index ->
+                                val file = currentPdfFile
+                                val bitmap by produceState<Bitmap?>(
+                                    initialValue = file?.let {
+                                        viewModel.bitmapCache.get(it, index, displayTargetWidth)
+                                    },
+                                    key1 = file?.absolutePath,
+                                    key2 = index,
+                                    key3 = verifiedPassword
+                                ) {
+                                    if (value == null && file != null) {
+                                        value = withContext(Dispatchers.IO) {
+                                            PdfEngine.renderPageBitmap(
+                                                context = context,
+                                                pdfFile = file,
+                                                pageIndex = index,
+                                                targetWidth = displayTargetWidth,
+                                                password = verifiedPassword,
+                                                useCache = true,
+                                                bitmapCache = viewModel.bitmapCache
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("pdf_page_card_$index"),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isNightMode) Color(0xFF141414) else Color.White
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        val bmp = bitmap
+                                        if (bmp != null && !bmp.isRecycled) {
+                                            Image(
+                                                bitmap = bmp.asImageBitmap(),
+                                                contentDescription = "PDF Page ${index + 1}",
+                                                colorFilter = nightInvertColorFilter,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(300.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                            }
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(if (isNightMode) Color(0xFF1F1F1F) else Color(0xFFF0F0F0))
+                                                .padding(vertical = 4.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "Page ${index + 1} of $pageCount",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isNightMode) Color.LightGray else Color.DarkGray
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Page Indicator Float Badge
+                        val firstVisibleItem = lazyListState.firstVisibleItemIndex
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            contentColor = Color.White,
+                            shadowElevation = 6.dp,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 16.dp)
+                        ) {
+                            Text(
+                                text = "${firstVisibleItem + 1} / $pageCount",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -959,9 +1068,24 @@ fun PdfViewerScreen(
     }
 }
 
-private fun sharePdfFile(context: android.content.Context, file: File) {
+@FormFactorPreviews
+@Composable
+private fun PdfViewerScreenPreview() {
+    com.dsc.pdfmaster.ui.theme.PdfMasterTheme {
+        PdfViewerScreen(
+            viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+            onBack = {}
+        )
+    }
+}
+
+private fun sharePdfFile(
+    context: Context,
+    file: File,
+    chooserTitle: String
+) {
     try {
-        val uri = androidx.core.content.FileProvider.getUriForFile(
+        val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
             file
@@ -971,15 +1095,18 @@ private fun sharePdfFile(context: android.content.Context, file: File) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Share PDF via"))
+        context.startActivity(Intent.createChooser(intent, chooserTitle))
     } catch (e: Exception) {
         e.printStackTrace()
     }
 }
 
-private fun printPdfFile(context: android.content.Context, file: File) {
+private fun printPdfFile(
+    context: Context,
+    file: File
+) {
     try {
-        val printManager = context.getSystemService(android.content.Context.PRINT_SERVICE) as? android.print.PrintManager
+        val printManager = context.getSystemService(Context.PRINT_SERVICE) as? android.print.PrintManager
         val printAdapter = object : android.print.PrintDocumentAdapter() {
             override fun onLayout(
                 oldAttributes: android.print.PrintAttributes?,
@@ -1012,11 +1139,11 @@ private fun printPdfFile(context: android.content.Context, file: File) {
                     }
                     callback?.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES))
                 } catch (e: Exception) {
-                    callback?.onWriteFailed(e.localizedMessage)
+                    callback?.onWriteFailed(e.message)
                 }
             }
         }
-        printManager?.print("PDF_Master_${file.name}", printAdapter, null)
+        printManager?.print("PDF_Master_Print_${file.name}", printAdapter, null)
     } catch (e: Exception) {
         e.printStackTrace()
     }

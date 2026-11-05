@@ -19,6 +19,10 @@
     <string name="section_quick_actions">QUICK ACTIONS</string>
     <string name="section_favorites">FAVORITES</string>
     <string name="section_recent_documents">RECENT DOCUMENTS</string>
+    <string name="section_organize_tools">ORGANIZE &amp; MANAGE</string>
+    <string name="section_optimize_tools">OPTIMIZE &amp; COMPRESS</string>
+    <string name="section_create_convert_tools">CREATE &amp; CONVERT</string>
+    <string name="section_security_tools">SECURITY &amp; TOOLS</string>
     <string name="action_see_all">See All</string>
     <string name="empty_recent_home">No recent PDFs. Open or create a PDF to get started.</string>
     <string name="msg_file_unavailable">File no longer available</string>

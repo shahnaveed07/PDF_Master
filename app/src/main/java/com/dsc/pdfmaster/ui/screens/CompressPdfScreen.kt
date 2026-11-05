@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -48,10 +50,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dsc.pdfmaster.data.model.BatchProgressState
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfCompressionMode
 import com.dsc.pdfmaster.pdfengine.PdfEngine
+import com.dsc.pdfmaster.ui.CompressionResultState
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.theme.Dimens
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +66,7 @@ fun CompressPdfScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val windowInfo = rememberWindowInfo()
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
     val compressionResult by viewModel.compressionResult.collectAsState()
     val selectedMode by viewModel.selectedCompressionMode.collectAsState()
@@ -98,415 +105,564 @@ fun CompressPdfScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Dimens.Spacing16),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Document Overview Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.PictureAsPdf,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp)
+            val contentModifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = Dimens.MaxContentWidth)
+
+            if (windowInfo.isExpanded) {
+                // Two-Pane Side-by-Side Layout
+                Row(
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing24)
+                ) {
+                    // Left Pane: Document Overview, Progress & Results
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        CompressDocumentCard(
+                            batchFiles = batchFiles,
+                            currentPdf = currentPdf,
+                            onSingleSelect = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                            onBatchSelect = { batchFilePickerLauncher.launch(arrayOf("application/pdf")) }
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+
+                        Spacer(modifier = Modifier.height(Dimens.Spacing16))
+
+                        batchProgress?.let { progress ->
+                            BatchProgressCard(progress = progress)
+                            Spacer(modifier = Modifier.height(Dimens.Spacing16))
+                        }
+
+                        compressionResult?.let { result ->
+                            if (result.isComplete) {
+                                CompressionResultCard(result = result)
+                                Spacer(modifier = Modifier.height(Dimens.Spacing16))
+                            }
+                        }
+                    }
+
+                    // Right Pane: Modes, Levels & Execute Button
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            CompressModeSelection(
+                                selectedMode = selectedMode,
+                                onSelectMode = { viewModel.setCompressionMode(it) }
+                            )
+
+                            Spacer(modifier = Modifier.height(Dimens.Spacing16))
+
+                            CompressLevelSelection(
+                                selectedLevel = selectedLevel,
+                                onSelectLevel = {
+                                    selectedLevel = it
+                                    viewModel.resetCompressionResult()
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(Dimens.Spacing24))
+
+                        Button(
+                            onClick = {
+                                if (batchFiles.isNotEmpty()) {
+                                    viewModel.executeBatchCompressPdfs(selectedLevel, selectedMode)
+                                } else if (currentPdf != null) {
+                                    val outName = "Compressed_${System.currentTimeMillis() / 1000}.pdf"
+                                    viewModel.executeCompressPdf(currentPdf!!, selectedLevel, outName, selectedMode)
+                                }
+                            },
+                            enabled = batchFiles.isNotEmpty() || currentPdf != null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(Dimens.ButtonHeight)
+                                .testTag("execute_compress_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(Icons.Default.Compress, contentDescription = null)
+                            Spacer(modifier = Modifier.width(Dimens.Spacing8))
                             Text(
                                 text = if (batchFiles.isNotEmpty()) {
-                                    "Batch Mode: ${batchFiles.size} PDFs Selected"
+                                    "Batch Compress ${batchFiles.size} PDFs Now"
                                 } else {
-                                    currentPdf?.name ?: "No PDF Selected"
+                                    "Compress PDF Now"
                                 },
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
                             )
-                            Text(
-                                text = if (batchFiles.isNotEmpty()) {
-                                    val totalBytes = batchFiles.sumOf { it.length() }
-                                    "Combined Size: ${PdfEngine.formatFileSize(totalBytes)}"
-                                } else if (currentPdf != null) {
-                                    "Original Size: ${PdfEngine.formatFileSize(currentPdf!!.length())}"
-                                } else {
-                                    "Select one or multiple files to reduce size"
-                                },
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("compress_select_file_button")
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Single File", fontSize = 12.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = { batchFilePickerLauncher.launch(arrayOf("application/pdf")) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("compress_select_batch_files_button")
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Batch Select", fontSize = 12.sp)
                         }
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Combined Batch Progress View
-            batchProgress?.let { progress ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("batch_compress_progress_card"),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    shape = RoundedCornerShape(16.dp)
+            } else {
+                // Compact / Medium Stacked Vertical Layout
+                Column(
+                    modifier = contentModifier
+                        .padding(vertical = Dimens.Spacing16)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (progress.isFinished) "Batch Compression Complete" else "Batch Compressing...",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = "${progress.completedFiles}/${progress.totalFiles} files",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.testTag("batch_compress_counter_text")
-                            )
-                        }
+                    CompressDocumentCard(
+                        batchFiles = batchFiles,
+                        currentPdf = currentPdf,
+                        onSingleSelect = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                        onBatchSelect = { batchFilePickerLauncher.launch(arrayOf("application/pdf")) }
+                    )
 
-                        LinearProgressIndicator(
-                            progress = { (progress.progressPercent / 100f).coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .testTag("batch_compress_progress_bar")
-                        )
+                    Spacer(modifier = Modifier.height(Dimens.Spacing16))
 
-                        progress.items.forEach { item ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = item.sourceFile.name,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = "${item.status.name} • ${item.message}",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Compression Results Showcase if available
-            compressionResult?.let { result ->
-                if (result.isComplete) {
-                    val savedBytes = (result.originalSizeBytes - result.compressedSizeBytes).coerceAtLeast(0L)
-                    val savedPercent = if (result.originalSizeBytes > 0) {
-                        ((savedBytes.toDouble() / result.originalSizeBytes) * 100).toInt().coerceIn(0, 99)
-                    } else {
-                        0
+                    batchProgress?.let { progress ->
+                        BatchProgressCard(progress = progress)
+                        Spacer(modifier = Modifier.height(Dimens.Spacing16))
                     }
 
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("compression_result_card"),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Compression Complete!",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("ORIGINAL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Text(
-                                        text = PdfEngine.formatFileSize(result.originalSizeBytes),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.testTag("compression_original_size_text")
-                                    )
-                                }
-                                Text("→", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        "COMPRESSED",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = PdfEngine.formatFileSize(result.compressedSizeBytes),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.testTag("compression_compressed_size_text")
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Saved $savedPercent% file size (${PdfEngine.formatFileSize(savedBytes)})",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.testTag("compression_savings_text")
-                            )
+                    compressionResult?.let { result ->
+                        if (result.isComplete) {
+                            CompressionResultCard(result = result)
+                            Spacer(modifier = Modifier.height(Dimens.Spacing16))
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
+                    CompressModeSelection(
+                        selectedMode = selectedMode,
+                        onSelectMode = { viewModel.setCompressionMode(it) }
+                    )
 
-            // Compression Mode Selector
-            Text(
-                text = "COMPRESSION ENGINE MODE",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
+                    Spacer(modifier = Modifier.height(Dimens.Spacing16))
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            PdfCompressionMode.values().forEach { mode ->
-                val isModeSelected = selectedMode == mode
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                        .clickable {
-                            viewModel.setCompressionMode(mode)
-                        }
-                        .testTag("compression_mode_${mode.name.lowercase()}"),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isModeSelected) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = isModeSelected,
-                            onClick = { viewModel.setCompressionMode(mode) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = mode.label,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = if (isModeSelected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
-                            )
-                            Text(
-                                text = mode.subtitle,
-                                fontSize = 11.sp,
-                                color = if (isModeSelected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            selectedMode.warningMessage?.let { warning ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                        .testTag("rasterize_compression_warning_card"),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Warning",
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = warning,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.testTag("rasterize_compression_warning_text")
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "SELECT COMPRESSION LEVEL",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            PdfCompressionLevel.values().forEach { level ->
-                val isSelected = selectedLevel == level
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                        .clickable {
-                            selectedLevel = level
+                    CompressLevelSelection(
+                        selectedLevel = selectedLevel,
+                        onSelectLevel = {
+                            selectedLevel = it
                             viewModel.resetCompressionResult()
                         }
-                        .testTag("compression_level_${level.name.lowercase()}"),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        }
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing24))
+
+                    Button(
+                        onClick = {
+                            if (batchFiles.isNotEmpty()) {
+                                viewModel.executeBatchCompressPdfs(selectedLevel, selectedMode)
+                            } else if (currentPdf != null) {
+                                val outName = "Compressed_${System.currentTimeMillis() / 1000}.pdf"
+                                viewModel.executeCompressPdf(currentPdf!!, selectedLevel, outName, selectedMode)
+                            }
+                        },
+                        enabled = batchFiles.isNotEmpty() || currentPdf != null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(Dimens.ButtonHeight)
+                            .testTag("execute_compress_button"),
+                        shape = RoundedCornerShape(Dimens.CornerMedium)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = level.label,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = if (isSelected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
-                            )
-                            Text(
-                                text = level.subtitle,
-                                fontSize = 11.sp,
-                                color = if (isSelected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
+                        Icon(Icons.Default.Compress, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                        Text(
+                            text = if (batchFiles.isNotEmpty()) {
+                                "Batch Compress ${batchFiles.size} PDFs Now"
+                            } else {
+                                "Compress PDF Now"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     }
                 }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+@Composable
+private fun CompressDocumentCard(
+    batchFiles: List<java.io.File>,
+    currentPdf: java.io.File?,
+    onSingleSelect: () -> Unit,
+    onBatchSelect: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(Dimens.CornerMedium)
+    ) {
+        Column(modifier = Modifier.padding(Dimens.Spacing16)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.PictureAsPdf,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.width(Dimens.Spacing12))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (batchFiles.isNotEmpty()) {
+                            "Batch Mode: ${batchFiles.size} PDFs Selected"
+                        } else {
+                            currentPdf?.name ?: "No PDF Selected"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Text(
+                        text = if (batchFiles.isNotEmpty()) {
+                            val totalBytes = batchFiles.sumOf { it.length() }
+                            "Combined Size: ${PdfEngine.formatFileSize(totalBytes)}"
+                        } else if (currentPdf != null) {
+                            "Original Size: ${PdfEngine.formatFileSize(currentPdf.length())}"
+                        } else {
+                            "Select one or multiple files to reduce size"
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-            Button(
-                onClick = {
-                    if (batchFiles.isNotEmpty()) {
-                        viewModel.executeBatchCompressPdfs(selectedLevel, selectedMode)
-                    } else if (currentPdf != null) {
-                        val outName = "Compressed_${System.currentTimeMillis() / 1000}.pdf"
-                        viewModel.executeCompressPdf(currentPdf!!, selectedLevel, outName, selectedMode)
-                    }
-                },
-                enabled = batchFiles.isNotEmpty() || currentPdf != null,
+            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing8)
+            ) {
+                OutlinedButton(
+                    onClick = onSingleSelect,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("compress_select_file_button"),
+                    shape = RoundedCornerShape(Dimens.CornerMedium)
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Single File", fontSize = 12.sp)
+                }
+
+                OutlinedButton(
+                    onClick = onBatchSelect,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("compress_select_batch_files_button"),
+                    shape = RoundedCornerShape(Dimens.CornerMedium)
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Batch Select", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatchProgressCard(progress: BatchProgressState) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("batch_compress_progress_card"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        shape = RoundedCornerShape(Dimens.CornerMedium)
+    ) {
+        Column(
+            modifier = Modifier.padding(Dimens.Spacing16),
+            verticalArrangement = Arrangement.spacedBy(Dimens.Spacing8)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (progress.isFinished) "Batch Compression Complete" else "Batch Compressing...",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = "${progress.completedFiles}/${progress.totalFiles} files",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.testTag("batch_compress_counter_text")
+                )
+            }
+
+            LinearProgressIndicator(
+                progress = { (progress.progressPercent / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("execute_compress_button"),
-                shape = RoundedCornerShape(12.dp)
+                    .height(8.dp)
+                    .testTag("batch_compress_progress_bar")
+            )
+
+            progress.items.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = item.sourceFile.name,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${item.status.name} • ${item.message}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompressionResultCard(result: CompressionResultState) {
+    val savedBytes = (result.originalSizeBytes - result.compressedSizeBytes).coerceAtLeast(0L)
+    val savedPercent = if (result.originalSizeBytes > 0) {
+        ((savedBytes.toDouble() / result.originalSizeBytes) * 100).toInt().coerceIn(0, 99)
+    } else {
+        0
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("compression_result_card"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        shape = RoundedCornerShape(Dimens.CornerMedium)
+    ) {
+        Column(
+            modifier = Modifier.padding(Dimens.Spacing16),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(36.dp)
+            )
+            Spacer(modifier = Modifier.height(Dimens.Spacing8))
+            Text(
+                text = "Compression Complete!",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Icon(Icons.Default.Compress, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (batchFiles.isNotEmpty()) {
-                        "Batch Compress ${batchFiles.size} PDFs Now"
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("ORIGINAL", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = PdfEngine.formatFileSize(result.originalSizeBytes),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.testTag("compression_original_size_text")
+                    )
+                }
+                Text("→", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "COMPRESSED",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = PdfEngine.formatFileSize(result.compressedSizeBytes),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("compression_compressed_size_text")
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(Dimens.Spacing8))
+            Text(
+                text = "Saved $savedPercent% file size (${PdfEngine.formatFileSize(savedBytes)})",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.testTag("compression_savings_text")
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompressModeSelection(
+    selectedMode: PdfCompressionMode,
+    onSelectMode: (PdfCompressionMode) -> Unit
+) {
+    Column {
+        Text(
+            text = "COMPRESSION ENGINE MODE",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            letterSpacing = 1.sp
+        )
+
+        Spacer(modifier = Modifier.height(Dimens.Spacing8))
+
+        PdfCompressionMode.values().forEach { mode ->
+            val isModeSelected = selectedMode == mode
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Dimens.Spacing8)
+                    .clickable { onSelectMode(mode) }
+                    .testTag("compression_mode_${mode.name.lowercase()}"),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isModeSelected) {
+                        MaterialTheme.colorScheme.primaryContainer
                     } else {
-                        "Compress PDF Now"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
+                        MaterialTheme.colorScheme.surface
+                    }
+                ),
+                shape = RoundedCornerShape(Dimens.CornerSmall)
+            ) {
+                Row(
+                    modifier = Modifier.padding(Dimens.Spacing12),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = isModeSelected,
+                        onClick = { onSelectMode(mode) }
+                    )
+                    Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = mode.label,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = if (isModeSelected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Text(
+                            text = mode.subtitle,
+                            fontSize = 11.sp,
+                            color = if (isModeSelected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        selectedMode.warningMessage?.let { warning ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Dimens.Spacing12)
+                    .testTag("rasterize_compression_warning_card"),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                shape = RoundedCornerShape(Dimens.CornerSmall)
+            ) {
+                Row(
+                    modifier = Modifier.padding(Dimens.Spacing12),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Warning",
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = warning,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.testTag("rasterize_compression_warning_text")
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompressLevelSelection(
+    selectedLevel: PdfCompressionLevel,
+    onSelectLevel: (PdfCompressionLevel) -> Unit
+) {
+    Column {
+        Text(
+            text = "SELECT COMPRESSION LEVEL",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            letterSpacing = 1.sp
+        )
+
+        Spacer(modifier = Modifier.height(Dimens.Spacing8))
+
+        PdfCompressionLevel.values().forEach { level ->
+            val isSelected = selectedLevel == level
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Dimens.Spacing8)
+                    .clickable { onSelectLevel(level) }
+                    .testTag("compression_level_${level.name.lowercase()}"),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isSelected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+                ),
+                shape = RoundedCornerShape(Dimens.CornerSmall)
+            ) {
+                Row(
+                    modifier = Modifier.padding(Dimens.Spacing12),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = level.label,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Text(
+                            text = level.subtitle,
+                            fontSize = 11.sp,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
             }
         }
     }

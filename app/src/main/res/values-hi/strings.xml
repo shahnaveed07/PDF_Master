@@ -17,6 +17,10 @@
     <string name="section_quick_actions">त्वरित कार्य</string>
     <string name="section_favorites">पसंदीदा</string>
     <string name="section_recent_documents">हाल के दस्तावेज़</string>
+    <string name="section_organize_tools">व्यवस्थित और प्रबंधित करें</string>
+    <string name="section_optimize_tools">अनुकूलन और कंप्रेस करें</string>
+    <string name="section_create_convert_tools">बनाएं और रूपांतरित करें</string>
+    <string name="section_security_tools">सुरक्षा और उपकरण</string>
     <string name="action_see_all">सभी देखें</string>
     <string name="empty_recent_home">कोई हालिया पीडीएफ नहीं। शुरू करने के लिए पीडीएफ खोलें या बनाएं।</string>
     <string name="msg_file_unavailable">फ़ाइल अब उपलब्ध नहीं है</string>

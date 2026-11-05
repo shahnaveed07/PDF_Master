@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +56,9 @@ import androidx.compose.ui.unit.sp
 import com.dsc.pdfmaster.R
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.theme.Dimens
+import com.dsc.pdfmaster.ui.util.FormFactorPreviews
+import com.dsc.pdfmaster.ui.util.rememberWindowInfo
 import java.io.File
 import java.io.FileOutputStream
 
@@ -66,6 +70,7 @@ fun MergePdfScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val windowInfo = rememberWindowInfo()
     val mergeFiles by viewModel.selectedFilesForMerge.collectAsState()
     var outputFileNameInput by remember { mutableStateOf("Merged_Document_${System.currentTimeMillis() / 1000}.pdf") }
 
@@ -121,177 +126,318 @@ fun MergePdfScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = Dimens.Spacing16),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = outputFileNameInput,
-                onValueChange = { outputFileNameInput = it },
-                label = { Text(stringResource(R.string.merge_output_name_label)) },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("merge_filename_input")
-            )
+            val contentModifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = Dimens.MaxContentWidth)
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.merge_selected_files_count, mergeFiles.size),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.semantics { heading() }
-                )
-
-                OutlinedButton(
-                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                    modifier = Modifier
-                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                        .testTag("add_pdf_files_button")
+            if (windowInfo.isExpanded) {
+                // Two-Pane side-by-side layout for Expanded width screens (tablets / desktop)
+                Row(
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing24)
                 ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = stringResource(R.string.merge_add_pdfs),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.merge_add_pdfs), fontSize = 12.sp)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (mergeFiles.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
-                        .testTag("merge_empty_state"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.CallMerge,
-                            contentDescription = stringResource(R.string.merge_screen_title),
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(56.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = stringResource(R.string.merge_empty_title),
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.merge_empty_subtitle),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(mergeFiles) { index, file ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("merge_item_$index"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(12.dp)
+                    // Left Pane: File list / Empty state
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
+                            Text(
+                                text = stringResource(R.string.merge_selected_files_count, mergeFiles.size),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.semantics { heading() }
+                            )
+
+                            OutlinedButton(
+                                onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                                modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .testTag("add_pdf_files_button"),
+                                shape = RoundedCornerShape(Dimens.CornerMedium)
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = stringResource(R.string.merge_add_pdfs),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(stringResource(R.string.merge_add_pdfs), fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                        if (mergeFiles.isEmpty()) {
+                            MergeEmptyStateCard(modifier = Modifier.weight(1f))
+                        } else {
+                            MergeFileList(
+                                mergeFiles = mergeFiles,
+                                onRemoveFile = { viewModel.removeFileFromMerge(it) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // Right Pane: Options & Action Button
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "MERGE OPTIONS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+                            OutlinedTextField(
+                                value = outputFileNameInput,
+                                onValueChange = { outputFileNameInput = it },
+                                label = { Text(stringResource(R.string.merge_output_name_label)) },
+                                singleLine = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "${index + 1}",
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
+                                    .testTag("merge_filename_input")
+                            )
+                        }
 
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = file.name,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = PdfEngine.formatFileSize(file.length()),
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { viewModel.removeFileFromMerge(file) },
-                                    modifier = Modifier
-                                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                        .testTag("remove_merge_item_$index")
-                                ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = stringResource(R.string.cd_remove_file)
-                                    )
-                                }
-                            }
+                        Button(
+                            onClick = { viewModel.executeMergePdfs(outputFileNameInput.trim()) },
+                            enabled = mergeFiles.size >= 2,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(Dimens.ButtonHeight)
+                                .testTag("execute_merge_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.CallMerge,
+                                contentDescription = stringResource(R.string.merge_screen_title)
+                            )
+                            Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                            Text(
+                                text = stringResource(R.string.merge_execute_button, mergeFiles.size),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
                         }
                     }
                 }
+            } else {
+                // Compact / Medium Stacked Vertical Layout
+                Column(
+                    modifier = contentModifier.padding(vertical = Dimens.Spacing16)
+                ) {
+                    OutlinedTextField(
+                        value = outputFileNameInput,
+                        onValueChange = { outputFileNameInput = it },
+                        label = { Text(stringResource(R.string.merge_output_name_label)) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("merge_filename_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing16))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.merge_selected_files_count, mergeFiles.size),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.semantics { heading() }
+                        )
+
+                        OutlinedButton(
+                            onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                            modifier = Modifier
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .testTag("add_pdf_files_button"),
+                            shape = RoundedCornerShape(Dimens.CornerMedium)
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = stringResource(R.string.merge_add_pdfs),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(stringResource(R.string.merge_add_pdfs), fontSize = 12.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    if (mergeFiles.isEmpty()) {
+                        MergeEmptyStateCard(modifier = Modifier.weight(1f))
+                    } else {
+                        MergeFileList(
+                            mergeFiles = mergeFiles,
+                            onRemoveFile = { viewModel.removeFileFromMerge(it) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
+                    Button(
+                        onClick = { viewModel.executeMergePdfs(outputFileNameInput.trim()) },
+                        enabled = mergeFiles.size >= 2,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(Dimens.ButtonHeight)
+                            .testTag("execute_merge_button"),
+                        shape = RoundedCornerShape(Dimens.CornerMedium)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.CallMerge,
+                            contentDescription = stringResource(R.string.merge_screen_title)
+                        )
+                        Spacer(modifier = Modifier.width(Dimens.Spacing8))
+                        Text(
+                            text = stringResource(R.string.merge_execute_button, mergeFiles.size),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(12.dp))
+@Composable
+private fun MergeEmptyStateCard(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(Dimens.CornerMedium))
+            .testTag("merge_empty_state"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.CallMerge,
+                contentDescription = stringResource(R.string.merge_screen_title),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(56.dp)
+            )
+            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+            Text(
+                text = stringResource(R.string.merge_empty_title),
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(Dimens.Spacing4))
+            Text(
+                text = stringResource(R.string.merge_empty_subtitle),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
-            Button(
-                onClick = { viewModel.executeMergePdfs(outputFileNameInput.trim()) },
-                enabled = mergeFiles.size >= 2,
+@Composable
+private fun MergeFileList(
+    mergeFiles: List<File>,
+    onRemoveFile: (File) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(vertical = Dimens.Spacing8),
+        verticalArrangement = Arrangement.spacedBy(Dimens.Spacing8)
+    ) {
+        itemsIndexed(mergeFiles) { index, file ->
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .sizeIn(minWidth = 48.dp, minHeight = 52.dp)
-                    .testTag("execute_merge_button"),
-                shape = RoundedCornerShape(12.dp)
+                    .testTag("merge_item_$index"),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(Dimens.CornerSmall)
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.CallMerge,
-                    contentDescription = stringResource(R.string.merge_screen_title)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.merge_execute_button, mergeFiles.size),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-            }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Dimens.Spacing12),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(Dimens.Spacing8)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "${index + 1}",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.width(Dimens.Spacing12))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = file.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = PdfEngine.formatFileSize(file.length()),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onRemoveFile(file) },
+                        modifier = Modifier
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("remove_merge_item_$index")
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = stringResource(R.string.cd_remove_file)
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+@FormFactorPreviews
+@Composable
+private fun MergePdfScreenPreview() {
+    com.dsc.pdfmaster.ui.theme.PdfMasterTheme {
+        MergePdfScreen(
+            viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+            onBack = {}
+        )
     }
 }

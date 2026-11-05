@@ -50,7 +50,7 @@ class GreetingScreenshotTest {
     }
 
     @Test
-    fun home_screen_screenshot() {
+    fun home_screen_phone_screenshot() {
         val vm = PdfMasterViewModel(application)
         composeTestRule.setContent {
             PdfMasterTheme(darkTheme = true) {
@@ -61,11 +61,27 @@ class GreetingScreenshotTest {
             }
         }
 
-        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/home_screen.png")
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/home_screen_phone.png")
     }
 
     @Test
-    fun merge_screen_screenshot() {
+    @Config(qualifiers = "w1280dp-h800dp-mdpi")
+    fun home_screen_tablet_screenshot() {
+        val vm = PdfMasterViewModel(application)
+        composeTestRule.setContent {
+            PdfMasterTheme(darkTheme = true) {
+                HomeScreen(
+                    viewModel = vm,
+                    onOpenPdfViewer = {}
+                )
+            }
+        }
+
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/home_screen_tablet.png")
+    }
+
+    @Test
+    fun merge_screen_phone_screenshot() {
         val vm = PdfMasterViewModel(application)
         composeTestRule.setContent {
             PdfMasterTheme(darkTheme = true) {
@@ -76,6 +92,22 @@ class GreetingScreenshotTest {
             }
         }
 
-        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/merge_screen.png")
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/merge_screen_phone.png")
+    }
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-mdpi")
+    fun merge_screen_tablet_screenshot() {
+        val vm = PdfMasterViewModel(application)
+        composeTestRule.setContent {
+            PdfMasterTheme(darkTheme = true) {
+                MergePdfScreen(
+                    viewModel = vm,
+                    onBack = {}
+                )
+            }
+        }
+
+        composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/merge_screen_tablet.png")
     }
 }
