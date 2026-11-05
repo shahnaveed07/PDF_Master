@@ -11,8 +11,11 @@ interface RecentPdfDao {
     @Query("SELECT * FROM recent_pdfs ORDER BY lastAccessedTimestamp DESC")
     fun getAllRecentPdfs(): Flow<List<RecentPdfEntity>>
 
-    @Query("SELECT * FROM recent_pdfs WHERE isFavorite = 1 ORDER BY lastAccessedTimestamp DESC")
+    @Query("SELECT * FROM recent_pdfs WHERE isFavorite = 1 ORDER BY isPinned DESC, lastAccessedTimestamp DESC")
     fun getFavoritePdfs(): Flow<List<RecentPdfEntity>>
+
+    @Query("SELECT * FROM recent_pdfs WHERE isFavorite = 1 OR isPinned = 1 ORDER BY isPinned DESC, lastAccessedTimestamp DESC")
+    fun getPinnedOrFavoritePdfs(): Flow<List<RecentPdfEntity>>
 
     @Query("SELECT * FROM recent_pdfs WHERE filePath = :path LIMIT 1")
     suspend fun getPdfByPath(path: String): RecentPdfEntity?
@@ -22,6 +25,15 @@ interface RecentPdfDao {
 
     @Query("UPDATE recent_pdfs SET isFavorite = :isFavorite WHERE filePath = :filePath")
     suspend fun updateFavorite(filePath: String, isFavorite: Boolean)
+
+    @Query("UPDATE recent_pdfs SET isPinned = :isPinned WHERE filePath = :filePath")
+    suspend fun updatePinned(filePath: String, isPinned: Boolean)
+
+    @Query("UPDATE recent_pdfs SET lastReadPage = :lastReadPage WHERE filePath = :filePath")
+    suspend fun updateLastReadPage(filePath: String, lastReadPage: Int)
+
+    @Query("SELECT lastReadPage FROM recent_pdfs WHERE filePath = :filePath LIMIT 1")
+    suspend fun getLastReadPage(filePath: String): Int?
 
     @Query("UPDATE recent_pdfs SET fileName = :newName WHERE filePath = :filePath")
     suspend fun renamePdf(filePath: String, newName: String)

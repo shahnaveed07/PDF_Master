@@ -9,7 +9,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -24,6 +23,7 @@ data class RecentPdfItemUiState(
 data class RecentUiState(
     val recentItems: List<RecentPdfItemUiState> = emptyList(),
     val favoriteItems: List<RecentPdfItemUiState> = emptyList(),
+    val pinnedOrFavoriteItems: List<RecentPdfItemUiState> = emptyList(),
     val searchQuery: String = "",
     val error: PdfOperationError? = null
 )
@@ -39,13 +39,19 @@ class RecentViewModel @Inject constructor(
     val uiState: StateFlow<RecentUiState> = combine(
         repository.allRecentPdfs,
         repository.favoritePdfs,
+        repository.pinnedOrFavoritePdfs,
         _searchQuery,
         _error
-    ) { recentList, favList, query, err ->
+    ) { recentList, favList, pinnedOrFavList, query, err ->
         val filteredRecent = if (query.isBlank()) {
             recentList
         } else {
             recentList.filter { it.fileName.contains(query, ignoreCase = true) }
+        }
+        val filteredPinnedOrFav = if (query.isBlank()) {
+            pinnedOrFavList
+        } else {
+            pinnedOrFavList.filter { it.fileName.contains(query, ignoreCase = true) }
         }
         RecentUiState(
             recentItems = filteredRecent.map { pdf ->
@@ -55,6 +61,12 @@ class RecentViewModel @Inject constructor(
                 )
             },
             favoriteItems = favList.map { pdf ->
+                RecentPdfItemUiState(
+                    entity = pdf,
+                    isAvailable = repository.isPdfAvailable(pdf)
+                )
+            },
+            pinnedOrFavoriteItems = filteredPinnedOrFav.map { pdf ->
                 RecentPdfItemUiState(
                     entity = pdf,
                     isAvailable = repository.isPdfAvailable(pdf)
@@ -80,6 +92,12 @@ class RecentViewModel @Inject constructor(
     fun toggleFavorite(filePath: String, currentStatus: Boolean) {
         viewModelScope.launch {
             repository.updateFavorite(filePath, !currentStatus)
+        }
+    }
+
+    fun togglePinned(filePath: String, currentStatus: Boolean) {
+        viewModelScope.launch {
+            repository.updatePinned(filePath, !currentStatus)
         }
     }
 

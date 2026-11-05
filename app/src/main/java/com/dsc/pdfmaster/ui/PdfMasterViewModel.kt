@@ -1,6 +1,7 @@
 package com.dsc.pdfmaster.ui
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -9,15 +10,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dsc.pdfmaster.data.database.PdfDatabase
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
+import com.dsc.pdfmaster.data.model.BatchProgressState
+import com.dsc.pdfmaster.data.model.IncomingIntentPayload
+import com.dsc.pdfmaster.data.model.PdfBookmarkEntry
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfCompressionMode
 import com.dsc.pdfmaster.data.model.PdfOperationError
 import com.dsc.pdfmaster.data.model.PdfPageItem
+import com.dsc.pdfmaster.data.model.PdfSearchMatch
 import com.dsc.pdfmaster.data.model.PdfTool
 import com.dsc.pdfmaster.data.model.PdfToolType
 import com.dsc.pdfmaster.data.repository.PdfRepository
 import com.dsc.pdfmaster.di.AppModule
 import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
+import com.dsc.pdfmaster.pdfengine.PdfAdvancedToolsEngine
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.pdfengine.PdfPageBitmapCache
 import com.dsc.pdfmaster.work.PdfWorkInfo
@@ -51,6 +57,11 @@ enum class ScreenRoute {
     MANAGE_PAGES,
     PASSWORD_PROTECT,
     REMOVE_PASSWORD,
+    SIGN_PDF,
+    ANNOTATE_PDF,
+    WATERMARK_PDF,
+    OCR_PDF,
+    DOCUMENT_SCANNER,
     SETTINGS
 }
 
@@ -285,6 +296,36 @@ class PdfMasterViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
+    val pinnedOrFavoritePdfs: StateFlow<List<RecentPdfEntity>> = repository.pinnedOrFavoritePdfs
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Batch Compress & Batch Convert states
+    private val _selectedBatchCompressFiles = MutableStateFlow<List<File>>(emptyList())
+    val selectedBatchCompressFiles: StateFlow<List<File>> = _selectedBatchCompressFiles.asStateFlow()
+
+    private val _batchCompressProgress = MutableStateFlow<BatchProgressState?>(null)
+    val batchCompressProgress: StateFlow<BatchProgressState?> = _batchCompressProgress.asStateFlow()
+
+    private val _selectedBatchConvertFiles = MutableStateFlow<List<File>>(emptyList())
+    val selectedBatchConvertFiles: StateFlow<List<File>> = _selectedBatchConvertFiles.asStateFlow()
+
+    private val _batchConvertProgress = MutableStateFlow<BatchProgressState?>(null)
+    val batchConvertProgress: StateFlow<BatchProgressState?> = _batchConvertProgress.asStateFlow()
+
+    // Viewer upgrades states
+    private val _viewerNightMode = MutableStateFlow(false)
+    val viewerNightMode: StateFlow<Boolean> = _viewerNightMode.asStateFlow()
+
+    private val _viewerSearchMatches = MutableStateFlow<List<PdfSearchMatch>>(emptyList())
+    val viewerSearchMatches: StateFlow<List<PdfSearchMatch>> = _viewerSearchMatches.asStateFlow()
+
+    private val _viewerBookmarks = MutableStateFlow<List<PdfBookmarkEntry>>(emptyList())
+    val viewerBookmarks: StateFlow<List<PdfBookmarkEntry>> = _viewerBookmarks.asStateFlow()
+
     private val backStack = ArrayDeque<ScreenRoute>(listOf(ScreenRoute.HOME))
 
     init {
@@ -439,6 +480,58 @@ class PdfMasterViewModel @Inject constructor(
         }
     }
 
+    fun togglePinned(filePath: String, currentStatus: Boolean) {
+        viewModelScope.launch {
+            repository.updatePinned(filePath, !currentStatus)
+        }
+    }
+
+    fun updateLastReadPage(filePath: String, pageIndex: Int) {
+        viewModelScope.launch {
+            repository.updateLastReadPage(filePath, pageIndex)
+        }
+    }
+
+    suspend fun getLastReadPage(filePath: String): Int {
+        return repository.getLastReadPage(filePath)
+    }
+
+    fun toggleViewerNightMode() {
+        _viewerNightMode.value = !_viewerNightMode.value
+    }
+
+    fun handleIncomingIntent(intent: Intent?) {
+        val payload = PdfAdvancedToolsEngine.parseIncomingIntent(intent)
+        when (payload) {
+            is IncomingIntentPayload.OpenPdf -> {
+                importAndSelectPdf(payload.uri, openViewer = true)
+            }
+            is IncomingIntentPayload.ShareSinglePdf -> {
+                importAndSelectPdf(payload.uri, openViewer = true)
+            }
+            is IncomingIntentPayload.ShareMultiplePdfs -> {
+                viewModelScope.launch {
+                    val imported = payload.uris.mapNotNull { uri ->
+                        repository.getOrCreateManagedFileFromUri(uri)
+                    }
+                    if (imported.isNotEmpty()) {
+                        addFilesForMerge(imported)
+                        _userNotification.value = "Loaded ${imported.size} shared PDFs for merging"
+                        navigateTo(ScreenRoute.MERGE_PDF)
+                    } else {
+                        _userNotification.value = "Could not load shared PDF files"
+                    }
+                }
+            }
+            is IncomingIntentPayload.ShareImages -> {
+                addImagesForPdf(payload.uris)
+                _userNotification.value = "Loaded ${payload.uris.size} shared image(s) for PDF creation"
+                navigateTo(ScreenRoute.IMAGES_TO_PDF)
+            }
+            IncomingIntentPayload.None -> Unit
+        }
+    }
+
     fun deletePdf(filePath: String) {
         viewModelScope.launch {
             repository.deletePdf(filePath)
@@ -504,6 +597,11 @@ class PdfMasterViewModel @Inject constructor(
                 navigateTo(ScreenRoute.MANAGE_PAGES)
             }
             PdfToolType.PASSWORD_PROTECT -> navigateTo(ScreenRoute.PASSWORD_PROTECT)
+            PdfToolType.SIGN_PDF -> navigateTo(ScreenRoute.SIGN_PDF)
+            PdfToolType.ANNOTATE_PDF -> navigateTo(ScreenRoute.ANNOTATE_PDF)
+            PdfToolType.WATERMARK_PDF -> navigateTo(ScreenRoute.WATERMARK_PDF)
+            PdfToolType.OCR_PDF -> navigateTo(ScreenRoute.OCR_PDF)
+            PdfToolType.DOCUMENT_SCANNER -> navigateTo(ScreenRoute.DOCUMENT_SCANNER)
         }
     }
 
@@ -1445,6 +1543,145 @@ class PdfMasterViewModel @Inject constructor(
                 _userNotification.value = "Extraction cancelled"
             } catch (e: Exception) {
                 _userNotification.value = "Extraction failed: ${e.localizedMessage ?: "Unknown error"}"
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    // Viewer Search, Bookmarks, and Single-Page Extract/Delete
+    fun searchInPdf(file: File, query: String, password: String? = null) {
+        if (query.isBlank()) {
+            _viewerSearchMatches.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _viewerSearchMatches.value = repository.searchInPdf(file, query, password)
+        }
+    }
+
+    fun clearViewerSearch() {
+        _viewerSearchMatches.value = emptyList()
+    }
+
+    fun loadViewerBookmarks(file: File, password: String? = null) {
+        viewModelScope.launch {
+            _viewerBookmarks.value = repository.extractPdfBookmarksAndOutline(file, password)
+        }
+    }
+
+    fun addViewerBookmark(file: File, title: String, pageIndex: Int, password: String? = null) {
+        viewModelScope.launch {
+            _viewerBookmarks.value = repository.addBookmarkToPdf(
+                pdfFile = file,
+                title = title,
+                pageIndex = pageIndex,
+                password = password
+            )
+            _userNotification.value = "Bookmark saved for Page ${pageIndex + 1}"
+        }
+    }
+
+    fun removeViewerBookmark(file: File, pageIndex: Int, password: String? = null) {
+        viewModelScope.launch {
+            repository.removeUserBookmark(file, pageIndex)
+            _viewerBookmarks.value = repository.extractPdfBookmarksAndOutline(file, password)
+        }
+    }
+
+    fun deleteCurrentPageFromViewer(
+        file: File,
+        pageIndexToDelete: Int,
+        password: String? = null,
+        onComplete: ((File?) -> Unit)? = null
+    ) {
+        if (_isProcessing.value) return
+        activeOperationJob = viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Deleting page ${pageIndexToDelete + 1}..."
+            try {
+                val outName = "${file.nameWithoutExtension}_page_${pageIndexToDelete + 1}_removed.pdf"
+                val result = repository.deleteSinglePageFromPdf(file, pageIndexToDelete, outName, password)
+                if (result != null) {
+                    _selectedPdfFile.value = result
+                    _isPdfExplicitlySelected.value = true
+                    _userNotification.value = "Page ${pageIndexToDelete + 1} deleted: ${result.name}"
+                    onComplete?.invoke(result)
+                } else {
+                    _userNotification.value = "Cannot delete page (document must have at least 2 pages)"
+                    onComplete?.invoke(null)
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    // Batch Compress & Batch Convert
+    fun selectBatchCompressFilesFromUris(uris: List<Uri>) {
+        viewModelScope.launch {
+            val files = uris.mapNotNull { repository.getOrCreateManagedFileFromUri(it) }
+            _selectedBatchCompressFiles.value = files
+            _batchCompressProgress.value = null
+        }
+    }
+
+    fun clearBatchCompressSelection() {
+        _selectedBatchCompressFiles.value = emptyList()
+        _batchCompressProgress.value = null
+    }
+
+    fun executeBatchCompressPdfs(
+        level: PdfCompressionLevel,
+        mode: PdfCompressionMode = _selectedCompressionMode.value
+    ) {
+        val files = _selectedBatchCompressFiles.value
+        if (_isProcessing.value || files.isEmpty()) return
+        activeOperationJob = viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Batch compressing ${files.size} PDF files..."
+            try {
+                val finalState = repository.batchCompressPdfs(files, level, mode) { progress ->
+                    _batchCompressProgress.value = progress
+                }
+                _batchCompressProgress.value = finalState
+                val succeededCount = finalState.items.count { it.outputFile != null }
+                _userNotification.value = "Batch compression finished ($succeededCount/${files.size} succeeded)"
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun selectBatchConvertFilesFromUris(uris: List<Uri>) {
+        viewModelScope.launch {
+            val files = uris.mapNotNull { repository.getOrCreateManagedFileFromUri(it) }
+            _selectedBatchConvertFiles.value = files
+            _batchConvertProgress.value = null
+        }
+    }
+
+    fun clearBatchConvertSelection() {
+        _selectedBatchConvertFiles.value = emptyList()
+        _batchConvertProgress.value = null
+    }
+
+    fun executeBatchConvertPdfsToText() {
+        val files = _selectedBatchConvertFiles.value
+        if (_isProcessing.value || files.isEmpty()) return
+        activeOperationJob = viewModelScope.launch {
+            _isProcessing.value = true
+            _processingMessage.value = "Batch converting ${files.size} PDF files to TXT..."
+            try {
+                val finalState = repository.batchConvertPdfsToText(files) { progress ->
+                    _batchConvertProgress.value = progress
+                }
+                _batchConvertProgress.value = finalState
+                val succeededOutputs = finalState.items.mapNotNull { it.outputFile }
+                if (succeededOutputs.isNotEmpty()) {
+                    _conversionOutputFiles.value = succeededOutputs
+                }
+                _userNotification.value = "Batch conversion finished (${succeededOutputs.size}/${files.size} succeeded)"
             } finally {
                 _isProcessing.value = false
             }

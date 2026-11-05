@@ -54,6 +54,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -181,6 +182,8 @@ fun ConvertPdfScreen(
     val errorMessage by viewModel.conversionErrorMessage.collectAsStateWithLifecycle()
     val isProcessing by viewModel.isProcessing.collectAsStateWithLifecycle()
     val processingMessage by viewModel.processingMessage.collectAsStateWithLifecycle()
+    val batchConvertFiles by viewModel.selectedBatchConvertFiles.collectAsStateWithLifecycle()
+    val batchConvertProgress by viewModel.batchConvertProgress.collectAsStateWithLifecycle()
 
     var selectedMode by rememberSaveable { mutableStateOf(ConversionMode.WORD_TO_PDF) }
 
@@ -222,7 +225,18 @@ fun ConvertPdfScreen(
     val pdfPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        uri?.let { viewModel.selectConversionPdfFromUri(it) }
+        uri?.let {
+            viewModel.clearBatchConvertSelection()
+            viewModel.selectConversionPdfFromUri(it)
+        }
+    }
+
+    val batchPdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.selectBatchConvertFilesFromUris(uris)
+        }
     }
 
     val multiPhotoPickerLauncher = rememberLauncherForActivityResult(
@@ -865,7 +879,80 @@ fun ConvertPdfScreen(
                         onPickPdf = { pdfPickerLauncher.launch(arrayOf("application/pdf")) }
                     )
 
-                    if (pdfRequiresPassword) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (batchConvertFiles.isNotEmpty()) {
+                                "Batch Selected: ${batchConvertFiles.size} PDFs"
+                            } else {
+                                "Or convert multiple PDFs in batch"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = { batchPdfPickerLauncher.launch(arrayOf("application/pdf")) },
+                            enabled = !isProcessing,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("select_batch_convert_pdfs_button")
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Batch Select PDFs")
+                        }
+                    }
+
+                    batchConvertProgress?.let { progress ->
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("batch_convert_progress_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = if (progress.isFinished) "Batch Conversion Complete" else "Batch Converting...",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "${progress.completedFiles}/${progress.totalFiles}",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.testTag("batch_convert_counter_text")
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { (progress.progressPercent / 100f).coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .testTag("batch_convert_progress_bar")
+                                )
+                                progress.items.forEach { item ->
+                                    Text(
+                                        text = "${item.sourceFile.name}: ${item.status.name} (${item.message})",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (pdfRequiresPassword && batchConvertFiles.isEmpty()) {
                         PasswordFieldCard(
                             password = pdfPassword,
                             passwordVisible = passwordVisible,
@@ -877,15 +964,19 @@ fun ConvertPdfScreen(
 
                     Button(
                         onClick = {
-                            conversionPdf?.let { pdf ->
-                                viewModel.executePdfToText(
-                                    file = pdf,
-                                    password = pdfPassword.takeIf { it.isNotEmpty() },
-                                    outputName = "${pdf.nameWithoutExtension}_text.txt"
-                                )
+                            if (batchConvertFiles.isNotEmpty()) {
+                                viewModel.executeBatchConvertPdfsToText()
+                            } else {
+                                conversionPdf?.let { pdf ->
+                                    viewModel.executePdfToText(
+                                        file = pdf,
+                                        password = pdfPassword.takeIf { it.isNotEmpty() },
+                                        outputName = "${pdf.nameWithoutExtension}_text.txt"
+                                    )
+                                }
                             }
                         },
-                        enabled = conversionPdf != null && !isProcessing && (!pdfRequiresPassword || pdfPassword.isNotEmpty()),
+                        enabled = (batchConvertFiles.isNotEmpty() || (conversionPdf != null && (!pdfRequiresPassword || pdfPassword.isNotEmpty()))) && !isProcessing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp)
@@ -894,7 +985,14 @@ fun ConvertPdfScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Extract Text (.txt)", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (batchConvertFiles.isNotEmpty()) {
+                                "Batch Extract Text (${batchConvertFiles.size} PDFs)"
+                            } else {
+                                "Extract Text (.txt)"
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     if (!extractedText.isNullOrBlank()) {

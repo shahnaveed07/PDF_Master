@@ -99,13 +99,13 @@ class DatabaseMigrationTest {
         }
         helper.close()
 
-        // 2. Open database with Room at version 2 using MIGRATION_1_2
+        // 2. Open database with Room at version 3 using MIGRATION_1_2 and MIGRATION_2_3
         val migratedDb = Room.databaseBuilder(
             context,
             PdfDatabase::class.java,
             testDbName
         )
-            .addMigrations(PdfDatabase.MIGRATION_1_2)
+            .addMigrations(PdfDatabase.MIGRATION_1_2, PdfDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
 
@@ -124,6 +124,8 @@ class DatabaseMigrationTest {
             assertEquals(4, report.pageCount)
             assertEquals(2500L, report.lastAccessedTimestamp)
             assertTrue("MAX(isFavorite) must preserve favorite status across duplicate rows", report.isFavorite)
+            assertEquals(false, report.isPinned)
+            assertEquals(0, report.lastReadPage)
 
             val invoice = allItems[1]
             assertEquals("/data/user/0/com.dsc.pdfmaster/files/invoice.pdf", invoice.filePath)

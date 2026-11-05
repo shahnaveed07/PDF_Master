@@ -56,6 +56,7 @@ fun RecentFilesScreen(
     val context = LocalContext.current
     val recentPdfs by viewModel.recentPdfs.collectAsState()
     val favoritePdfs by viewModel.favoritePdfs.collectAsState()
+    val pinnedOrFavoritePdfs by viewModel.pinnedOrFavoritePdfs.collectAsState()
 
     var selectedTabIndex by remember { mutableStateOf(0) }
     var fileToRename by remember { mutableStateOf<RecentPdfEntity?>(null) }
@@ -64,7 +65,7 @@ fun RecentFilesScreen(
     var renameInputText by remember { mutableStateOf("") }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
-    val displayList = if (selectedTabIndex == 0) recentPdfs else favoritePdfs
+    val displayList = if (selectedTabIndex == 0) recentPdfs else pinnedOrFavoritePdfs
 
     Column(
         modifier = modifier
@@ -96,7 +97,7 @@ fun RecentFilesScreen(
                 modifier = Modifier.testTag("tab_starred_documents")
             ) {
                 Text(
-                    text = "Starred (${favoritePdfs.size})",
+                    text = "Favorites / Pinned (${pinnedOrFavoritePdfs.size})",
                     modifier = Modifier.padding(vertical = 12.dp),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
@@ -112,7 +113,7 @@ fun RecentFilesScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (selectedTabIndex == 0) "RECENT PDF HISTORY" else "FAVORITE DOCUMENTS",
+                text = if (selectedTabIndex == 0) "RECENT PDF HISTORY" else "FAVORITES & PINNED DOCUMENTS",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -151,7 +152,7 @@ fun RecentFilesScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = if (selectedTabIndex == 0) "No recent documents found" else "No starred PDFs yet",
+                        text = if (selectedTabIndex == 0) "No recent documents found" else "No starred or pinned PDFs yet",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -166,7 +167,58 @@ fun RecentFilesScreen(
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(displayList) { pdf ->
+                // Dedicated Favorites / Pinned Section at the top of All Files when non-empty
+                if (selectedTabIndex == 0 && pinnedOrFavoritePdfs.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "FAVORITES / PINNED",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                                .testTag("favorites_pinned_section_header")
+                        )
+                    }
+                    items(pinnedOrFavoritePdfs, key = { "pinned_${it.filePath}" }) { pdf ->
+                        val available = viewModel.isPdfAvailable(pdf)
+                        PdfFileCard(
+                            pdf = pdf,
+                            isAvailable = available,
+                            onClick = {
+                                if (available) {
+                                    onOpenPdfViewer(File(pdf.filePath))
+                                } else {
+                                    viewModel.showNotification("File no longer available")
+                                }
+                            },
+                            onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
+                            onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
+                            onShare = { sharePdf(context, File(pdf.filePath)) },
+                            onRename = {
+                                fileToRename = pdf
+                                renameInputText = pdf.fileName.removeSuffix(".pdf")
+                            },
+                            onDelete = { fileToDelete = pdf },
+                            onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
+                            onFileInfo = { fileInfoToShow = pdf }
+                        )
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "ALL RECENT FILES",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                }
+
+                items(displayList, key = { "list_${it.filePath}" }) { pdf ->
                     val available = viewModel.isPdfAvailable(pdf)
                     PdfFileCard(
                         pdf = pdf,
@@ -179,6 +231,7 @@ fun RecentFilesScreen(
                             }
                         },
                         onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
+                        onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
                         onShare = { sharePdf(context, File(pdf.filePath)) },
                         onRename = {
                             fileToRename = pdf

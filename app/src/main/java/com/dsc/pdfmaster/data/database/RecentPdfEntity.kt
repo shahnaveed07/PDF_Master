@@ -11,5 +11,7 @@ data class RecentPdfEntity(
     val pageCount: Int,
     val lastAccessedTimestamp: Long = System.currentTimeMillis(),
     val isFavorite: Boolean = false,
-    val thumbnailPath: String? = null
+    val thumbnailPath: String? = null,
+    val isPinned: Boolean = false,
+    val lastReadPage: Int = 0
 )

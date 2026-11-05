@@ -19,9 +19,11 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -61,6 +63,7 @@ fun PdfFileCard(
     onShare: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onTogglePinned: (() -> Unit)? = null,
     onRemoveFromRecent: (() -> Unit)? = null,
     onFileInfo: (() -> Unit)? = null,
     isAvailable: Boolean = remember(pdf.filePath) {
@@ -125,14 +128,26 @@ fun PdfFileCard(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = pdf.fileName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (pdf.isPinned) {
+                        Icon(
+                            imageVector = Icons.Filled.PushPin,
+                            contentDescription = "Pinned",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .padding(end = 4.dp)
+                        )
+                    }
+                    Text(
+                        text = pdf.fileName,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -154,6 +169,14 @@ fun PdfFileCard(
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (pdf.lastReadPage > 0) {
+                            Text(
+                                text = " • Last read p.${pdf.lastReadPage + 1}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
@@ -188,6 +211,19 @@ fun PdfFileCard(
                     Text("Remove", fontSize = 12.sp)
                 }
             } else {
+                if (onTogglePinned != null) {
+                    IconButton(
+                        onClick = onTogglePinned,
+                        modifier = Modifier.testTag("pin_button_${pdf.filePath.hashCode()}")
+                    ) {
+                        Icon(
+                            imageVector = if (pdf.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = if (pdf.isPinned) "Unpin" else "Pin",
+                            tint = if (pdf.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 IconButton(
                     onClick = onToggleFavorite,
                     modifier = Modifier.testTag("favorite_button_${pdf.filePath.hashCode()}")
@@ -211,6 +247,21 @@ fun PdfFileCard(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        if (onTogglePinned != null) {
+                            DropdownMenuItem(
+                                text = { Text(if (pdf.isPinned) "Unpin from Top" else "Pin to Top") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (pdf.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onTogglePinned()
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Share PDF") },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },

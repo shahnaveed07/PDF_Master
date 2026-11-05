@@ -7,10 +7,21 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.dsc.pdfmaster.data.database.RecentPdfDao
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
+import com.dsc.pdfmaster.data.model.BatchProgressState
+import com.dsc.pdfmaster.data.model.OcrSearchablePdfResult
+import com.dsc.pdfmaster.data.model.PageNumberConfig
+import com.dsc.pdfmaster.data.model.PdfAnnotationItem
+import com.dsc.pdfmaster.data.model.PdfBookmarkEntry
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfCompressionMode
 import com.dsc.pdfmaster.data.model.PdfPageItem
+import com.dsc.pdfmaster.data.model.PdfSearchMatch
+import com.dsc.pdfmaster.data.model.SavedSignatureItem
+import com.dsc.pdfmaster.data.model.ScannedPageDraft
+import com.dsc.pdfmaster.data.model.SignaturePlacement
+import com.dsc.pdfmaster.data.model.WatermarkConfig
 import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
+import com.dsc.pdfmaster.pdfengine.PdfAdvancedToolsEngine
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +40,7 @@ class PdfRepository @Inject constructor(
 ) {
     val allRecentPdfs: Flow<List<RecentPdfEntity>> = dao.getAllRecentPdfs()
     val favoritePdfs: Flow<List<RecentPdfEntity>> = dao.getFavoritePdfs()
+    val pinnedOrFavoritePdfs: Flow<List<RecentPdfEntity>> = dao.getPinnedOrFavoritePdfs()
 
     private fun computeSha256(file: File): String? {
         if (!file.exists() || !file.isFile) return null
@@ -216,13 +228,30 @@ class PdfRepository @Inject constructor(
             fileSizeBytes = file.length(),
             pageCount = pageCount,
             lastAccessedTimestamp = System.currentTimeMillis(),
-            isFavorite = existing?.isFavorite ?: isFavorite
+            isFavorite = existing?.isFavorite ?: isFavorite,
+            thumbnailPath = existing?.thumbnailPath,
+            isPinned = existing?.isPinned ?: false,
+            lastReadPage = existing?.lastReadPage ?: PdfAdvancedToolsEngine.getLastReadPage(context, file.absolutePath)
         )
         dao.insertPdf(entity)
     }
 
     suspend fun updateFavorite(filePath: String, isFavorite: Boolean) {
         dao.updateFavorite(filePath, isFavorite)
+    }
+
+    suspend fun updatePinned(filePath: String, isPinned: Boolean) {
+        dao.updatePinned(filePath, isPinned)
+    }
+
+    suspend fun updateLastReadPage(filePath: String, lastReadPage: Int) = withContext(Dispatchers.IO) {
+        val safePage = lastReadPage.coerceAtLeast(0)
+        PdfAdvancedToolsEngine.saveLastReadPage(context, filePath, safePage)
+        dao.updateLastReadPage(filePath, safePage)
+    }
+
+    suspend fun getLastReadPage(filePath: String): Int = withContext(Dispatchers.IO) {
+        dao.getLastReadPage(filePath) ?: PdfAdvancedToolsEngine.getLastReadPage(context, filePath)
     }
 
     suspend fun renamePdf(file: File, newName: String): File? = withContext(Dispatchers.IO) {
@@ -549,4 +578,170 @@ class PdfRepository @Inject constructor(
             starterFile
         }
     }
+
+    // =========================================================================
+    // Phase 3 Repository Operations
+    // =========================================================================
+
+    suspend fun saveReusableSignature(signatureBitmap: Bitmap, name: String): SavedSignatureItem? =
+        PdfAdvancedToolsEngine.saveReusableSignature(context, signatureBitmap, name)
+
+    suspend fun loadSavedSignatures(): List<SavedSignatureItem> =
+        PdfAdvancedToolsEngine.loadSavedSignatures(context)
+
+    suspend fun deleteSavedSignature(file: File): Boolean =
+        PdfAdvancedToolsEngine.deleteSavedSignature(file)
+
+    suspend fun flattenSignaturesIntoPdf(
+        pdfFile: File,
+        placements: List<SignaturePlacement>,
+        outputFileName: String,
+        password: String? = null
+    ): File? = withContext(Dispatchers.IO) {
+        val out = PdfAdvancedToolsEngine.flattenSignaturesIntoPdf(
+            context = context,
+            pdfFile = pdfFile,
+            placements = placements,
+            outputFileName = outputFileName,
+            password = password
+        )
+        if (out != null) {
+            registerPdfFile(out)
+        }
+        out
+    }
+
+    suspend fun applyAnnotationsToPdf(
+        pdfFile: File,
+        annotations: List<PdfAnnotationItem>,
+        outputFileName: String,
+        password: String? = null
+    ): File? = withContext(Dispatchers.IO) {
+        val out = PdfAdvancedToolsEngine.applyAnnotationsToPdf(
+            context = context,
+            pdfFile = pdfFile,
+            annotations = annotations,
+            outputFileName = outputFileName,
+            password = password
+        )
+        if (out != null) {
+            registerPdfFile(out)
+        }
+        out
+    }
+
+    suspend fun applyWatermarkAndPageNumbers(
+        pdfFile: File,
+        watermarkConfig: WatermarkConfig,
+        pageNumberConfig: PageNumberConfig,
+        outputFileName: String,
+        password: String? = null
+    ): File? = withContext(Dispatchers.IO) {
+        val out = PdfAdvancedToolsEngine.applyWatermarkAndPageNumbers(
+            context = context,
+            pdfFile = pdfFile,
+            watermarkConfig = watermarkConfig,
+            pageNumberConfig = pageNumberConfig,
+            outputFileName = outputFileName,
+            password = password
+        )
+        if (out != null) {
+            registerPdfFile(out)
+        }
+        out
+    }
+
+    suspend fun searchInPdf(
+        pdfFile: File,
+        query: String,
+        password: String? = null
+    ): List<PdfSearchMatch> =
+        PdfAdvancedToolsEngine.searchInPdf(context, pdfFile, query, password)
+
+    suspend fun extractPdfBookmarksAndOutline(
+        pdfFile: File,
+        password: String? = null
+    ): List<PdfBookmarkEntry> =
+        PdfAdvancedToolsEngine.extractPdfBookmarksAndOutline(context, pdfFile, password)
+
+    suspend fun addBookmarkToPdf(
+        pdfFile: File,
+        title: String,
+        pageIndex: Int,
+        writeToPdfOutline: Boolean = false,
+        password: String? = null
+    ): List<PdfBookmarkEntry> =
+        PdfAdvancedToolsEngine.addBookmarkToPdf(context, pdfFile, title, pageIndex, writeToPdfOutline, password)
+
+    suspend fun removeUserBookmark(
+        pdfFile: File,
+        pageIndex: Int
+    ): List<PdfBookmarkEntry> =
+        PdfAdvancedToolsEngine.removeUserBookmark(context, pdfFile, pageIndex)
+
+    suspend fun deleteSinglePageFromPdf(
+        pdfFile: File,
+        pageIndexToDelete: Int,
+        outputFileName: String,
+        password: String? = null
+    ): File? = withContext(Dispatchers.IO) {
+        val out = PdfAdvancedToolsEngine.deleteSinglePageFromPdf(
+            context = context,
+            pdfFile = pdfFile,
+            pageIndexToDelete = pageIndexToDelete,
+            outputFileName = outputFileName,
+            password = password
+        )
+        if (out != null) {
+            registerPdfFile(out)
+        }
+        out
+    }
+
+    suspend fun performOcrToSearchablePdf(
+        sourcePdfFile: File? = null,
+        sourceImageUris: List<Uri> = emptyList(),
+        outputFileName: String,
+        password: String? = null
+    ): OcrSearchablePdfResult? = withContext(Dispatchers.IO) {
+        val res = PdfAdvancedToolsEngine.performOcrToSearchablePdf(
+            context = context,
+            sourcePdfFile = sourcePdfFile,
+            sourceImageUris = sourceImageUris,
+            outputFileName = outputFileName,
+            password = password
+        )
+        if (res != null) {
+            registerPdfFile(res.outputFile, knownPageCount = res.pageCount)
+        }
+        res
+    }
+
+    suspend fun exportScannedPagesToPdf(
+        pages: List<ScannedPageDraft>,
+        outputFileName: String
+    ): File? = withContext(Dispatchers.IO) {
+        val out = PdfAdvancedToolsEngine.exportScannedPagesToPdf(context, pages, outputFileName)
+        if (out != null) {
+            registerPdfFile(out, knownPageCount = pages.size)
+        }
+        out
+    }
+
+    suspend fun batchCompressPdfs(
+        files: List<File>,
+        level: PdfCompressionLevel,
+        mode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION,
+        onProgress: (BatchProgressState) -> Unit = {}
+    ): BatchProgressState = withContext(Dispatchers.IO) {
+        val result = PdfAdvancedToolsEngine.batchCompressPdfs(context, files, level, mode, onProgress)
+        result.items.mapNotNull { it.outputFile }.forEach { registerPdfFile(it) }
+        result
+    }
+
+    suspend fun batchConvertPdfsToText(
+        files: List<File>,
+        onProgress: (BatchProgressState) -> Unit = {}
+    ): BatchProgressState =
+        PdfAdvancedToolsEngine.batchConvertPdfsToText(context, files, onProgress)
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,16 +18,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -35,6 +47,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -64,9 +77,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -77,10 +93,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dsc.pdfmaster.pdfengine.PdfAdvancedToolsEngine
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.ScreenRoute
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -94,6 +112,9 @@ fun PdfViewerScreen(
 ) {
     val context = LocalContext.current
     val currentPdfFile by viewModel.selectedPdfFile.collectAsState()
+    val isNightMode by viewModel.viewerNightMode.collectAsState()
+    val searchMatches by viewModel.viewerSearchMatches.collectAsState()
+    val bookmarks by viewModel.viewerBookmarks.collectAsState()
     val scope = rememberCoroutineScope()
 
     var pageCount by remember { mutableIntStateOf(0) }
@@ -106,6 +127,11 @@ fun PdfViewerScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showFileInfoDialog by remember { mutableStateOf(false) }
+    var showBookmarksDialog by remember { mutableStateOf(false) }
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchQueryInput by remember { mutableStateOf("") }
+    var activeSearchMatchIndex by remember { mutableIntStateOf(0) }
+    var newBookmarkTitle by remember { mutableStateOf("") }
     var renameInputText by remember { mutableStateOf("") }
 
     val configuration = LocalConfiguration.current
@@ -114,6 +140,14 @@ fun PdfViewerScreen(
         with(density) { configuration.screenWidthDp.dp.roundToPx() }.coerceIn(360, 1080)
     }
     val lazyListState = rememberLazyListState()
+
+    val nightInvertColorFilter = remember(isNightMode) {
+        if (isNightMode) {
+            ColorFilter.colorMatrix(ColorMatrix(PdfAdvancedToolsEngine.createNightInvertColorMatrix()))
+        } else {
+            null
+        }
+    }
 
     LaunchedEffect(currentPdfFile, verifiedPassword) {
         val file = currentPdfFile
@@ -126,7 +160,15 @@ fun PdfViewerScreen(
 
                     if (!isPasswordProtected) {
                         val meta = PdfEngine.getPdfMetadata(context, android.net.Uri.fromFile(file), verifiedPassword)
-                        pageCount = meta?.pageCount ?: 0
+                        val loadedCount = meta?.pageCount ?: 0
+                        pageCount = loadedCount
+                        val savedLastPage = viewModel.getLastReadPage(file.absolutePath)
+                        viewModel.loadViewerBookmarks(file, verifiedPassword)
+                        withContext(Dispatchers.Main) {
+                            if (loadedCount > 0 && savedLastPage in 1 until loadedCount) {
+                                lazyListState.scrollToItem(savedLastPage)
+                            }
+                        }
                     }
                 } catch (_: Exception) {
                     pageCount = 0
@@ -140,6 +182,18 @@ fun PdfViewerScreen(
             pageCount = 0
             isLoading = false
         }
+    }
+
+    // Persist last-read page as the user scrolls
+    LaunchedEffect(lazyListState, currentPdfFile, pageCount) {
+        val file = currentPdfFile ?: return@LaunchedEffect
+        snapshotFlow { lazyListState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { pageIdx ->
+                if (pageCount > 0 && pageIdx in 0 until pageCount) {
+                    viewModel.updateLastReadPage(file.absolutePath, pageIdx)
+                }
+            }
     }
 
     Column(
@@ -157,7 +211,7 @@ fun PdfViewerScreen(
                     )
                     if (pageCount > 0) {
                         Text(
-                            text = "$pageCount Total Pages • 100% Crisp Render",
+                            text = "$pageCount Total Pages • ${if (isNightMode) "Night Invert" else "100% Crisp Render"}",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -173,6 +227,42 @@ fun PdfViewerScreen(
                 }
             },
             actions = {
+                if (!isPasswordProtected && pageCount > 0) {
+                    IconButton(
+                        onClick = {
+                            showSearchBar = !showSearchBar
+                            if (!showSearchBar) {
+                                searchQueryInput = ""
+                                viewModel.clearViewerSearch()
+                            }
+                        },
+                        modifier = Modifier.testTag("viewer_search_toggle_button")
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Search in PDF")
+                    }
+
+                    IconButton(
+                        onClick = {
+                            currentPdfFile?.let { viewModel.loadViewerBookmarks(it, verifiedPassword) }
+                            newBookmarkTitle = "Page ${lazyListState.firstVisibleItemIndex + 1}"
+                            showBookmarksDialog = true
+                        },
+                        modifier = Modifier.testTag("viewer_bookmarks_button")
+                    ) {
+                        Icon(Icons.Default.Bookmark, contentDescription = "Bookmarks & Outline")
+                    }
+
+                    IconButton(
+                        onClick = { viewModel.toggleViewerNightMode() },
+                        modifier = Modifier.testTag("viewer_night_mode_button")
+                    ) {
+                        Icon(
+                            imageVector = if (isNightMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = "Toggle Night Invert Mode"
+                        )
+                    }
+                }
+
                 IconButton(
                     onClick = { showOverflowMenu = true },
                     modifier = Modifier.testTag("viewer_overflow_button")
@@ -184,6 +274,80 @@ fun PdfViewerScreen(
                     expanded = showOverflowMenu,
                     onDismissRequest = { showOverflowMenu = false }
                 ) {
+                    val currentPageIdx = lazyListState.firstVisibleItemIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+
+                    if (!isPasswordProtected && pageCount > 0 && currentPdfFile != null) {
+                        DropdownMenuItem(
+                            text = { Text("Extract Current Page (Page ${currentPageIdx + 1})") },
+                            leadingIcon = { Icon(Icons.Default.ContentCut, contentDescription = null) },
+                            modifier = Modifier.testTag("viewer_menu_extract_current_page"),
+                            onClick = {
+                                showOverflowMenu = false
+                                val file = currentPdfFile!!
+                                val outName = "${file.nameWithoutExtension}_page_${currentPageIdx + 1}.pdf"
+                                viewModel.executeExtractPages(
+                                    file = file,
+                                    pageIndices = listOf(currentPageIdx),
+                                    outputName = outName,
+                                    password = verifiedPassword
+                                )
+                            }
+                        )
+
+                        if (pageCount > 1) {
+                            DropdownMenuItem(
+                                text = { Text("Delete Current Page (Page ${currentPageIdx + 1})") },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                modifier = Modifier.testTag("viewer_menu_delete_current_page"),
+                                onClick = {
+                                    showOverflowMenu = false
+                                    val file = currentPdfFile!!
+                                    viewModel.deleteCurrentPageFromViewer(
+                                        file = file,
+                                        pageIndexToDelete = currentPageIdx,
+                                        password = verifiedPassword
+                                    )
+                                }
+                            )
+                        }
+
+                        DropdownMenuItem(
+                            text = { Text("Sign PDF") },
+                            leadingIcon = { Icon(Icons.Default.Draw, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.navigateTo(ScreenRoute.SIGN_PDF)
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Annotate PDF") },
+                            leadingIcon = { Icon(Icons.Default.EditNote, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.navigateTo(ScreenRoute.ANNOTATE_PDF)
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Watermark & Page Numbers") },
+                            leadingIcon = { Icon(Icons.Default.FormatColorText, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.navigateTo(ScreenRoute.WATERMARK_PDF)
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("OCR Searchable PDF") },
+                            leadingIcon = { Icon(Icons.Default.TextFields, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                viewModel.navigateTo(ScreenRoute.OCR_PDF)
+                            }
+                        )
+                    }
+
                     if (isPasswordProtected || verifiedPassword != null) {
                         DropdownMenuItem(
                             text = { Text("Remove Password") },
@@ -265,6 +429,109 @@ fun PdfViewerScreen(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         )
+
+        // In-Document Search Bar
+        if (showSearchBar && currentPdfFile != null && !isPasswordProtected) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("viewer_search_bar")
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQueryInput,
+                            onValueChange = { q ->
+                                searchQueryInput = q
+                                activeSearchMatchIndex = 0
+                                currentPdfFile?.let { file ->
+                                    viewModel.searchInPdf(file, q, verifiedPassword)
+                                }
+                            },
+                            placeholder = { Text("Search text in document...", fontSize = 13.sp) },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("viewer_search_input")
+                        )
+
+                        if (searchMatches.isNotEmpty()) {
+                            Text(
+                                text = "${activeSearchMatchIndex + 1}/${searchMatches.size}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.testTag("viewer_search_match_counter")
+                            )
+                            IconButton(
+                                onClick = {
+                                    if (searchMatches.isNotEmpty()) {
+                                        activeSearchMatchIndex =
+                                            (activeSearchMatchIndex - 1 + searchMatches.size) % searchMatches.size
+                                        val targetPage = searchMatches[activeSearchMatchIndex].pageIndex
+                                        scope.launch {
+                                            lazyListState.animateScrollToItem(targetPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0)))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.testTag("viewer_search_prev_button")
+                            ) {
+                                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Match")
+                            }
+                            IconButton(
+                                onClick = {
+                                    if (searchMatches.isNotEmpty()) {
+                                        activeSearchMatchIndex = (activeSearchMatchIndex + 1) % searchMatches.size
+                                        val targetPage = searchMatches[activeSearchMatchIndex].pageIndex
+                                        scope.launch {
+                                            lazyListState.animateScrollToItem(targetPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0)))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.testTag("viewer_search_next_button")
+                            ) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "Next Match")
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                showSearchBar = false
+                                searchQueryInput = ""
+                                viewModel.clearViewerSearch()
+                            }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Search")
+                        }
+                    }
+
+                    if (searchMatches.isNotEmpty() && activeSearchMatchIndex in searchMatches.indices) {
+                        val activeMatch = searchMatches[activeSearchMatchIndex]
+                        LaunchedEffect(activeSearchMatchIndex, searchMatches.size) {
+                            val targetPage = activeMatch.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                            lazyListState.scrollToItem(targetPage)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Page ${activeMatch.pageIndex + 1}: ${activeMatch.snippet}",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2
+                        )
+                    } else if (searchQueryInput.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "No matches found for \"$searchQueryInput\"",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
 
         if (currentPdfFile == null || !currentPdfFile!!.exists()) {
             Box(
@@ -410,7 +677,7 @@ fun PdfViewerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .weight(1f)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(if (isNightMode) Color(0xFF0A0A0A) else MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 LazyColumn(
                     state = lazyListState,
@@ -449,7 +716,9 @@ fun PdfViewerScreen(
                                 .fillMaxWidth()
                                 .testTag("pdf_page_card_$index"),
                             shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isNightMode) Color(0xFF141414) else Color.White
+                            ),
                             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -458,6 +727,7 @@ fun PdfViewerScreen(
                                     Image(
                                         bitmap = bmp.asImageBitmap(),
                                         contentDescription = "PDF Page ${index + 1}",
+                                        colorFilter = nightInvertColorFilter,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 } else {
@@ -473,7 +743,7 @@ fun PdfViewerScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFFF0F0F0))
+                                        .background(if (isNightMode) Color(0xFF1F1F1F) else Color(0xFFF0F0F0))
                                         .padding(vertical = 4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -481,7 +751,7 @@ fun PdfViewerScreen(
                                         text = "Page ${index + 1} of $pageCount",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.DarkGray
+                                        color = if (isNightMode) Color.LightGray else Color.DarkGray
                                     )
                                 }
                             }
@@ -509,6 +779,117 @@ fun PdfViewerScreen(
                 }
             }
         }
+    }
+
+    // Bookmarks & Document Outline Dialog
+    if (showBookmarksDialog && currentPdfFile != null) {
+        val currentPageIndex = lazyListState.firstVisibleItemIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+        AlertDialog(
+            onDismissRequest = { showBookmarksDialog = false },
+            title = { Text("Bookmarks & Outline", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newBookmarkTitle,
+                            onValueChange = { newBookmarkTitle = it },
+                            label = { Text("Bookmark Page ${currentPageIndex + 1}") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("bookmark_title_input")
+                        )
+                        IconButton(
+                            onClick = {
+                                val title = newBookmarkTitle.ifBlank { "Page ${currentPageIndex + 1}" }
+                                viewModel.addViewerBookmark(
+                                    file = currentPdfFile!!,
+                                    title = title,
+                                    pageIndex = currentPageIndex,
+                                    password = verifiedPassword
+                                )
+                            },
+                            modifier = Modifier.testTag("add_bookmark_button")
+                        ) {
+                            Icon(Icons.Default.BookmarkAdd, contentDescription = "Save Bookmark")
+                        }
+                    }
+
+                    if (bookmarks.isEmpty()) {
+                        Text(
+                            text = "No bookmarks or outline entries found. Add one above for the current page.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.height(220.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(bookmarks) { bm ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showBookmarksDialog = false
+                                            scope.launch {
+                                                lazyListState.scrollToItem(
+                                                    bm.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                                                )
+                                            }
+                                        }
+                                        .testTag("bookmark_item_${bm.pageIndex}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = bm.title,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp
+                                            )
+                                            Text(
+                                                text = "Page ${bm.pageIndex + 1}",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.removeViewerBookmark(
+                                                    file = currentPdfFile!!,
+                                                    pageIndex = bm.pageIndex,
+                                                    password = verifiedPassword
+                                                )
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Remove Bookmark",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showBookmarksDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
 
     // Rename Dialog

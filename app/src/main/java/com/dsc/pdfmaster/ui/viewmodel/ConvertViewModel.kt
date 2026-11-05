@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.dsc.pdfmaster.data.model.BatchProgressState
 import com.dsc.pdfmaster.data.model.PdfOperationError
 import com.dsc.pdfmaster.data.repository.PdfRepository
 import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
@@ -27,6 +28,8 @@ import javax.inject.Inject
 
 data class ConvertUiState(
     val sourcePdf: File? = null,
+    val batchPdfFiles: List<File> = emptyList(),
+    val batchProgress: BatchProgressState? = null,
     val pdfRequiresPassword: Boolean = false,
     val sourceImageUri: Uri? = null,
     val sourceImageName: String? = null,
@@ -60,6 +63,46 @@ class ConvertViewModel @Inject constructor(
 
     fun resetSession() {
         _uiState.value = ConvertUiState()
+    }
+
+    fun setBatchPdfFiles(files: List<File>) {
+        _uiState.update {
+            it.copy(
+                batchPdfFiles = files,
+                batchProgress = null,
+                error = null
+            )
+        }
+    }
+
+    fun executeBatchConvertPdfsToText(files: List<File> = _uiState.value.batchPdfFiles) {
+        if (_uiState.value.isProcessing || files.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    batchPdfFiles = files,
+                    isProcessing = true,
+                    processingMessage = "Batch converting ${files.size} PDFs to TXT...",
+                    error = null
+                )
+            }
+            val finalState = repository.batchConvertPdfsToText(files) { progress ->
+                _uiState.update {
+                    it.copy(
+                        batchProgress = progress,
+                        processingMessage = "Converting ${progress.currentFileName} (${progress.completedFiles}/${progress.totalFiles})..."
+                    )
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    isProcessing = false,
+                    processingMessage = "",
+                    batchProgress = finalState,
+                    outputFiles = finalState.items.mapNotNull { item -> item.outputFile }
+                )
+            }
+        }
     }
 
     fun clearOutputAndErrors() {

@@ -15,14 +15,19 @@ import com.dsc.pdfmaster.data.repository.PdfRepository
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.pdfengine.PdfPageBitmapCache
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
+import com.dsc.pdfmaster.ui.viewmodel.AnnotatePdfViewModel
 import com.dsc.pdfmaster.ui.viewmodel.CompressViewModel
 import com.dsc.pdfmaster.ui.viewmodel.ConvertViewModel
+import com.dsc.pdfmaster.ui.viewmodel.DocumentScannerViewModel
 import com.dsc.pdfmaster.ui.viewmodel.MergeViewModel
+import com.dsc.pdfmaster.ui.viewmodel.OcrViewModel
 import com.dsc.pdfmaster.ui.viewmodel.PagesViewModel
 import com.dsc.pdfmaster.ui.viewmodel.RecentViewModel
 import com.dsc.pdfmaster.ui.viewmodel.SecurityViewModel
+import com.dsc.pdfmaster.ui.viewmodel.SignPdfViewModel
 import com.dsc.pdfmaster.ui.viewmodel.SplitViewModel
 import com.dsc.pdfmaster.ui.viewmodel.ViewerViewModel
+import com.dsc.pdfmaster.ui.viewmodel.WatermarkPdfViewModel
 import com.dsc.pdfmaster.work.PdfWorkManager
 import dagger.Module
 import dagger.Provides
@@ -163,6 +168,16 @@ object AppModule {
                         ViewerViewModel(app, repository, bitmapCache) as T
                     modelClass.isAssignableFrom(RecentViewModel::class.java) ->
                         RecentViewModel(repository) as T
+                    modelClass.isAssignableFrom(SignPdfViewModel::class.java) ->
+                        SignPdfViewModel(app, repository) as T
+                    modelClass.isAssignableFrom(AnnotatePdfViewModel::class.java) ->
+                        AnnotatePdfViewModel(app, repository) as T
+                    modelClass.isAssignableFrom(WatermarkPdfViewModel::class.java) ->
+                        WatermarkPdfViewModel(repository) as T
+                    modelClass.isAssignableFrom(OcrViewModel::class.java) ->
+                        OcrViewModel(repository) as T
+                    modelClass.isAssignableFrom(DocumentScannerViewModel::class.java) ->
+                        DocumentScannerViewModel(repository) as T
                     else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
                 }
             }

@@ -22,12 +22,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallMerge
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,7 +66,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val recentList by viewModel.recentPdfs.collectAsState()
-    val favoriteList by viewModel.favoritePdfs.collectAsState()
+    val favoriteList by viewModel.pinnedOrFavoritePdfs.collectAsState()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -88,7 +94,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // Quick Action Grid (2x2)
+        // Quick Action Grid
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
@@ -126,7 +132,7 @@ fun HomeScreen(
                     )
                     QuickActionCard(
                         title = "Compress",
-                        subtitle = "Reduce size",
+                        subtitle = "Reduce size / Batch",
                         icon = Icons.Default.Compress,
                         onClick = { viewModel.navigateTo(ScreenRoute.COMPRESS_PDF) },
                         tag = "action_compress_pdf",
@@ -151,6 +157,69 @@ fun HomeScreen(
                         icon = Icons.Default.LockOpen,
                         onClick = { viewModel.navigateTo(ScreenRoute.REMOVE_PASSWORD) },
                         tag = "action_remove_password",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    QuickActionCard(
+                        title = "Sign PDF",
+                        subtitle = "Draw & flatten signature",
+                        icon = Icons.Default.Draw,
+                        onClick = { viewModel.navigateTo(ScreenRoute.SIGN_PDF) },
+                        tag = "action_sign_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionCard(
+                        title = "Annotate",
+                        subtitle = "Highlight, draw & text",
+                        icon = Icons.Default.EditNote,
+                        onClick = { viewModel.navigateTo(ScreenRoute.ANNOTATE_PDF) },
+                        tag = "action_annotate_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    QuickActionCard(
+                        title = "Watermark",
+                        subtitle = "Text & page numbers",
+                        icon = Icons.Default.FormatColorText,
+                        onClick = { viewModel.navigateTo(ScreenRoute.WATERMARK_PDF) },
+                        tag = "action_watermark_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionCard(
+                        title = "OCR PDF",
+                        subtitle = "Offline searchable text",
+                        icon = Icons.Default.TextFields,
+                        onClick = { viewModel.navigateTo(ScreenRoute.OCR_PDF) },
+                        tag = "action_ocr_pdf",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    QuickActionCard(
+                        title = "Doc Scanner",
+                        subtitle = "Scan pages to PDF",
+                        icon = Icons.Default.CameraAlt,
+                        onClick = { viewModel.navigateTo(ScreenRoute.DOCUMENT_SCANNER) },
+                        tag = "action_document_scanner",
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionCard(
+                        title = "Merge PDFs",
+                        subtitle = "Combine multiple files",
+                        icon = Icons.AutoMirrored.Filled.CallMerge,
+                        onClick = { viewModel.navigateTo(ScreenRoute.MERGE_PDF) },
+                        tag = "action_merge_pdf",
                         modifier = Modifier.weight(1f)
                     )
                 }

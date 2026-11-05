@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RecentPdfEntity::class], version = 2, exportSchema = true)
+@Database(entities = [RecentPdfEntity::class], version = 3, exportSchema = true)
 abstract class PdfDatabase : RoomDatabase() {
     abstract fun recentPdfDao(): RecentPdfDao
 
@@ -42,6 +42,13 @@ abstract class PdfDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `recent_pdfs` ADD COLUMN `isPinned` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `recent_pdfs` ADD COLUMN `lastReadPage` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context): PdfDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -49,7 +56,7 @@ abstract class PdfDatabase : RoomDatabase() {
                     PdfDatabase::class.java,
                     "pdf_master_db"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 INSTANCE = instance
                 instance

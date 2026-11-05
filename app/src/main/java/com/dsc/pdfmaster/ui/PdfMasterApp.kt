@@ -33,42 +33,54 @@ import com.dsc.pdfmaster.di.hiltViewModel
 import com.dsc.pdfmaster.ui.components.PdfBottomNavigationBar
 import com.dsc.pdfmaster.ui.components.PdfTopAppBar
 import com.dsc.pdfmaster.ui.components.ProcessingDialog
+import com.dsc.pdfmaster.ui.navigation.AnnotatePdfRoute
 import com.dsc.pdfmaster.ui.navigation.CompressPdfRoute
 import com.dsc.pdfmaster.ui.navigation.ConvertPdfRoute
 import com.dsc.pdfmaster.ui.navigation.CreatePdfRoute
+import com.dsc.pdfmaster.ui.navigation.DocumentScannerRoute
 import com.dsc.pdfmaster.ui.navigation.ExtractPagesRoute
 import com.dsc.pdfmaster.ui.navigation.HomeRoute
 import com.dsc.pdfmaster.ui.navigation.ImagesToPdfRoute
 import com.dsc.pdfmaster.ui.navigation.ManagePagesRoute
 import com.dsc.pdfmaster.ui.navigation.MergePdfRoute
+import com.dsc.pdfmaster.ui.navigation.OcrPdfRoute
 import com.dsc.pdfmaster.ui.navigation.PasswordProtectRoute
 import com.dsc.pdfmaster.ui.navigation.PdfViewerRoute
 import com.dsc.pdfmaster.ui.navigation.RecentFilesRoute
 import com.dsc.pdfmaster.ui.navigation.RemovePasswordRoute
 import com.dsc.pdfmaster.ui.navigation.SettingsRoute
+import com.dsc.pdfmaster.ui.navigation.SignPdfRoute
 import com.dsc.pdfmaster.ui.navigation.SplitPdfRoute
+import com.dsc.pdfmaster.ui.navigation.WatermarkPdfRoute
 import com.dsc.pdfmaster.ui.navigation.toAppRoute
 import com.dsc.pdfmaster.ui.navigation.toScreenRoute
+import com.dsc.pdfmaster.ui.screens.AnnotatePdfScreen
 import com.dsc.pdfmaster.ui.screens.CompressPdfScreen
 import com.dsc.pdfmaster.ui.screens.ConvertPdfScreen
 import com.dsc.pdfmaster.ui.screens.CreatePdfScreen
+import com.dsc.pdfmaster.ui.screens.DocumentScannerScreen
 import com.dsc.pdfmaster.ui.screens.ExtractPdfScreen
 import com.dsc.pdfmaster.ui.screens.HomeScreen
 import com.dsc.pdfmaster.ui.screens.ImagesToPdfScreen
 import com.dsc.pdfmaster.ui.screens.ManagePagesScreen
 import com.dsc.pdfmaster.ui.screens.MergePdfScreen
+import com.dsc.pdfmaster.ui.screens.OcrPdfScreen
 import com.dsc.pdfmaster.ui.screens.PasswordProtectScreen
 import com.dsc.pdfmaster.ui.screens.PdfViewerScreen
 import com.dsc.pdfmaster.ui.screens.RecentFilesScreen
 import com.dsc.pdfmaster.ui.screens.RemovePasswordScreen
 import com.dsc.pdfmaster.ui.screens.SettingsScreen
+import com.dsc.pdfmaster.ui.screens.SignPdfScreen
 import com.dsc.pdfmaster.ui.screens.SplitPdfScreen
+import com.dsc.pdfmaster.ui.screens.WatermarkPdfScreen
 import com.dsc.pdfmaster.ui.theme.PdfMasterTheme
 import kotlinx.coroutines.launch
 
 @Composable
 fun PdfMasterApp(
-    viewModel: PdfMasterViewModel = hiltViewModel()
+    viewModel: PdfMasterViewModel = hiltViewModel(),
+    incomingIntent: android.content.Intent? = null,
+    onIntentConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -85,6 +97,13 @@ fun PdfMasterApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(incomingIntent) {
+        if (incomingIntent != null) {
+            viewModel.handleIncomingIntent(incomingIntent)
+            onIntentConsumed()
+        }
+    }
 
     var hasRequestedNotificationPermission by rememberSaveable { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -273,6 +292,36 @@ fun PdfMasterApp(
                     }
                     composable<PasswordProtectRoute> {
                         PasswordProtectScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                    }
+                    composable<SignPdfRoute> {
+                        SignPdfScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                    }
+                    composable<AnnotatePdfRoute> {
+                        AnnotatePdfScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                    }
+                    composable<WatermarkPdfRoute> {
+                        WatermarkPdfScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                    }
+                    composable<OcrPdfRoute> {
+                        OcrPdfScreen(
+                            viewModel = viewModel,
+                            onBack = { viewModel.navigateBack() }
+                        )
+                    }
+                    composable<DocumentScannerRoute> {
+                        DocumentScannerScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )

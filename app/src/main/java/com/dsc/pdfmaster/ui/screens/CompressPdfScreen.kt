@@ -29,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -62,6 +63,8 @@ fun CompressPdfScreen(
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
     val compressionResult by viewModel.compressionResult.collectAsState()
     val selectedMode by viewModel.selectedCompressionMode.collectAsState()
+    val batchFiles by viewModel.selectedBatchCompressFiles.collectAsState()
+    val batchProgress by viewModel.batchCompressProgress.collectAsState()
 
     var selectedLevel by remember { mutableStateOf(PdfCompressionLevel.MEDIUM) }
 
@@ -70,7 +73,17 @@ fun CompressPdfScreen(
     ) { uri ->
         uri?.let {
             viewModel.resetCompressionResult()
+            viewModel.clearBatchCompressSelection()
             viewModel.importAndSelectPdf(it, openViewer = false)
+        }
+    }
+
+    val batchFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.resetCompressionResult()
+            viewModel.selectBatchCompressFilesFromUris(uris)
         }
     }
 
@@ -97,45 +110,136 @@ fun CompressPdfScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PictureAsPdf,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentPdf?.name ?: "No PDF Selected",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.PictureAsPdf,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp)
                         )
-                        Text(
-                            text = if (currentPdf != null) {
-                                "Original Size: ${PdfEngine.formatFileSize(currentPdf!!.length())}"
-                            } else {
-                                "Select a file to reduce size"
-                            },
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (batchFiles.isNotEmpty()) {
+                                    "Batch Mode: ${batchFiles.size} PDFs Selected"
+                                } else {
+                                    currentPdf?.name ?: "No PDF Selected"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = if (batchFiles.isNotEmpty()) {
+                                    val totalBytes = batchFiles.sumOf { it.length() }
+                                    "Combined Size: ${PdfEngine.formatFileSize(totalBytes)}"
+                                } else if (currentPdf != null) {
+                                    "Original Size: ${PdfEngine.formatFileSize(currentPdf!!.length())}"
+                                } else {
+                                    "Select one or multiple files to reduce size"
+                                },
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    OutlinedButton(
-                        onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
-                        modifier = Modifier.testTag("compress_select_file_button")
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Select", fontSize = 12.sp)
+                        OutlinedButton(
+                            onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("compress_select_file_button")
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Single File", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { batchFilePickerLauncher.launch(arrayOf("application/pdf")) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("compress_select_batch_files_button")
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Batch Select", fontSize = 12.sp)
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Combined Batch Progress View
+            batchProgress?.let { progress ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("batch_compress_progress_card"),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (progress.isFinished) "Batch Compression Complete" else "Batch Compressing...",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "${progress.completedFiles}/${progress.totalFiles} files",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.testTag("batch_compress_counter_text")
+                            )
+                        }
+
+                        LinearProgressIndicator(
+                            progress = { (progress.progressPercent / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .testTag("batch_compress_progress_bar")
+                        )
+
+                        progress.items.forEach { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = item.sourceFile.name,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "${item.status.name} • ${item.message}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // Compression Results Showcase if available
             compressionResult?.let { result ->
@@ -378,12 +482,14 @@ fun CompressPdfScreen(
 
             Button(
                 onClick = {
-                    if (currentPdf != null) {
+                    if (batchFiles.isNotEmpty()) {
+                        viewModel.executeBatchCompressPdfs(selectedLevel, selectedMode)
+                    } else if (currentPdf != null) {
                         val outName = "Compressed_${System.currentTimeMillis() / 1000}.pdf"
                         viewModel.executeCompressPdf(currentPdf!!, selectedLevel, outName, selectedMode)
                     }
                 },
-                enabled = currentPdf != null,
+                enabled = batchFiles.isNotEmpty() || currentPdf != null,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
@@ -392,7 +498,15 @@ fun CompressPdfScreen(
             ) {
                 Icon(Icons.Default.Compress, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Compress PDF Now", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(
+                    text = if (batchFiles.isNotEmpty()) {
+                        "Batch Compress ${batchFiles.size} PDFs Now"
+                    } else {
+                        "Compress PDF Now"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
             }
         }
     }

@@ -3,12 +3,17 @@ package com.dsc.pdfmaster.data.model
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallMerge
 import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.graphics.vector.ImageVector
 
 enum class PdfToolType {
@@ -19,7 +24,12 @@ enum class PdfToolType {
     IMAGES_TO_PDF,
     VIEW_PDF,
     MANAGE_PAGES,
-    PASSWORD_PROTECT
+    PASSWORD_PROTECT,
+    SIGN_PDF,
+    ANNOTATE_PDF,
+    WATERMARK_PDF,
+    OCR_PDF,
+    DOCUMENT_SCANNER
 }
 
 data class PdfTool(
@@ -69,6 +79,42 @@ val pdfToolsList = listOf(
         description = "Convert photos, JPG & PNG images into clean PDF documents",
         icon = Icons.Default.Image,
         isPopular = true
+    ),
+    PdfTool(
+        type = PdfToolType.SIGN_PDF,
+        title = "Sign PDF",
+        description = "Draw, save, position, and flatten signatures onto any PDF page",
+        icon = Icons.Default.Draw,
+        isPopular = true,
+        badge = "NEW"
+    ),
+    PdfTool(
+        type = PdfToolType.ANNOTATE_PDF,
+        title = "Annotate PDF",
+        description = "Highlight, freehand draw, and add text boxes with undo/redo",
+        icon = Icons.Default.EditNote,
+        isPopular = true,
+        badge = "NEW"
+    ),
+    PdfTool(
+        type = PdfToolType.WATERMARK_PDF,
+        title = "Watermark & Numbers",
+        description = "Apply custom text watermarks and formatted page numbering",
+        icon = Icons.Default.FormatColorText
+    ),
+    PdfTool(
+        type = PdfToolType.OCR_PDF,
+        title = "OCR Searchable PDF",
+        description = "On-device ML Kit text recognition with invisible searchable layer",
+        icon = Icons.Default.TextFields,
+        badge = "OFFLINE"
+    ),
+    PdfTool(
+        type = PdfToolType.DOCUMENT_SCANNER,
+        title = "Document Scanner",
+        description = "Scan physical pages via ML Kit Document Scanner and export to PDF",
+        icon = Icons.Default.CameraAlt,
+        badge = "SCAN"
     ),
     PdfTool(
         type = PdfToolType.MANAGE_PAGES,

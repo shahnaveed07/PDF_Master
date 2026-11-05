@@ -1,6 +1,8 @@
 package com.dsc.pdfmaster.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.dsc.pdfmaster.data.model.BatchProgressState
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
 import com.dsc.pdfmaster.data.model.PdfCompressionMode
 import com.dsc.pdfmaster.data.model.PdfOperationError
@@ -14,11 +16,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 
 data class CompressUiState(
     val sourceFile: File? = null,
+    val batchFiles: List<File> = emptyList(),
+    val batchProgress: BatchProgressState? = null,
     val selectedLevel: PdfCompressionLevel = PdfCompressionLevel.MEDIUM,
     val selectedMode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION,
     val isProcessing: Boolean = false,
@@ -47,6 +52,51 @@ class CompressViewModel @Inject constructor(
         }
     }
 
+    fun setBatchFiles(files: List<File>) {
+        _uiState.update {
+            it.copy(
+                batchFiles = files,
+                batchProgress = null,
+                error = null
+            )
+        }
+    }
+
+    fun executeBatchCompress(
+        files: List<File> = _uiState.value.batchFiles,
+        level: PdfCompressionLevel = _uiState.value.selectedLevel,
+        mode: PdfCompressionMode = _uiState.value.selectedMode
+    ) {
+        if (_uiState.value.isProcessing || files.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    batchFiles = files,
+                    isProcessing = true,
+                    processingMessage = "Batch compressing ${files.size} files...",
+                    error = null
+                )
+            }
+            val finalState = repository.batchCompressPdfs(files, level, mode) { progress ->
+                _uiState.update {
+                    it.copy(
+                        batchProgress = progress,
+                        progressPercent = progress.progressPercent,
+                        processingMessage = "Compressing ${progress.currentFileName} (${progress.completedFiles}/${progress.totalFiles})..."
+                    )
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    isProcessing = false,
+                    progressPercent = 100,
+                    processingMessage = "",
+                    batchProgress = finalState
+                )
+            }
+        }
+    }
+
     fun setCompressionLevel(level: PdfCompressionLevel) {
         _uiState.update {
             it.copy(
@@ -68,7 +118,7 @@ class CompressViewModel @Inject constructor(
     }
 
     fun resetCompressionResult() {
-        _uiState.update { it.copy(compressionResult = null, error = null) }
+        _uiState.update { it.copy(compressionResult = null, batchProgress = null, error = null) }
     }
 
     fun executeCompress(

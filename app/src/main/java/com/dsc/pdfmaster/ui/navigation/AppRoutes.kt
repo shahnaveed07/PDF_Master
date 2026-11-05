@@ -150,6 +150,46 @@ data object RemovePasswordRoute : AppRoute {
 }
 
 @Serializable
+data object SignPdfRoute : AppRoute {
+    override val screenRoute: ScreenRoute = ScreenRoute.SIGN_PDF
+    private val kSerializer: KSerializer<SignPdfRoute> =
+        RouteObjectSerializer("com.dsc.pdfmaster.ui.navigation.SignPdfRoute", this)
+    fun serializer(): KSerializer<SignPdfRoute> = kSerializer
+}
+
+@Serializable
+data object AnnotatePdfRoute : AppRoute {
+    override val screenRoute: ScreenRoute = ScreenRoute.ANNOTATE_PDF
+    private val kSerializer: KSerializer<AnnotatePdfRoute> =
+        RouteObjectSerializer("com.dsc.pdfmaster.ui.navigation.AnnotatePdfRoute", this)
+    fun serializer(): KSerializer<AnnotatePdfRoute> = kSerializer
+}
+
+@Serializable
+data object WatermarkPdfRoute : AppRoute {
+    override val screenRoute: ScreenRoute = ScreenRoute.WATERMARK_PDF
+    private val kSerializer: KSerializer<WatermarkPdfRoute> =
+        RouteObjectSerializer("com.dsc.pdfmaster.ui.navigation.WatermarkPdfRoute", this)
+    fun serializer(): KSerializer<WatermarkPdfRoute> = kSerializer
+}
+
+@Serializable
+data object OcrPdfRoute : AppRoute {
+    override val screenRoute: ScreenRoute = ScreenRoute.OCR_PDF
+    private val kSerializer: KSerializer<OcrPdfRoute> =
+        RouteObjectSerializer("com.dsc.pdfmaster.ui.navigation.OcrPdfRoute", this)
+    fun serializer(): KSerializer<OcrPdfRoute> = kSerializer
+}
+
+@Serializable
+data object DocumentScannerRoute : AppRoute {
+    override val screenRoute: ScreenRoute = ScreenRoute.DOCUMENT_SCANNER
+    private val kSerializer: KSerializer<DocumentScannerRoute> =
+        RouteObjectSerializer("com.dsc.pdfmaster.ui.navigation.DocumentScannerRoute", this)
+    fun serializer(): KSerializer<DocumentScannerRoute> = kSerializer
+}
+
+@Serializable
 data object SettingsRoute : AppRoute {
     override val screenRoute: ScreenRoute = ScreenRoute.SETTINGS
     private val kSerializer: KSerializer<SettingsRoute> =
@@ -171,6 +211,11 @@ fun ScreenRoute.toAppRoute(): AppRoute = when (this) {
     ScreenRoute.MANAGE_PAGES -> ManagePagesRoute
     ScreenRoute.PASSWORD_PROTECT -> PasswordProtectRoute
     ScreenRoute.REMOVE_PASSWORD -> RemovePasswordRoute
+    ScreenRoute.SIGN_PDF -> SignPdfRoute
+    ScreenRoute.ANNOTATE_PDF -> AnnotatePdfRoute
+    ScreenRoute.WATERMARK_PDF -> WatermarkPdfRoute
+    ScreenRoute.OCR_PDF -> OcrPdfRoute
+    ScreenRoute.DOCUMENT_SCANNER -> DocumentScannerRoute
     ScreenRoute.SETTINGS -> SettingsRoute
 }
 
@@ -190,6 +235,11 @@ fun NavDestination?.toScreenRoute(): ScreenRoute? {
         hasRoute<ManagePagesRoute>() -> ScreenRoute.MANAGE_PAGES
         hasRoute<PasswordProtectRoute>() -> ScreenRoute.PASSWORD_PROTECT
         hasRoute<RemovePasswordRoute>() -> ScreenRoute.REMOVE_PASSWORD
+        hasRoute<SignPdfRoute>() -> ScreenRoute.SIGN_PDF
+        hasRoute<AnnotatePdfRoute>() -> ScreenRoute.ANNOTATE_PDF
+        hasRoute<WatermarkPdfRoute>() -> ScreenRoute.WATERMARK_PDF
+        hasRoute<OcrPdfRoute>() -> ScreenRoute.OCR_PDF
+        hasRoute<DocumentScannerRoute>() -> ScreenRoute.DOCUMENT_SCANNER
         hasRoute<SettingsRoute>() -> ScreenRoute.SETTINGS
         else -> null
     }
