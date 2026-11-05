@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RecentPdfEntity::class], version = 2, exportSchema = false)
+@Database(entities = [RecentPdfEntity::class], version = 2, exportSchema = true)
 abstract class PdfDatabase : RoomDatabase() {
     abstract fun recentPdfDao(): RecentPdfDao
 

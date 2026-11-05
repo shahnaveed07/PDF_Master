@@ -68,10 +68,18 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  sourceSets {
+    getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    getByName("test").assets.directories.add("$projectDir/schemas")
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
   }
+}
+
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -87,11 +95,16 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
+  implementation(libs.dagger)
+  implementation(libs.javax.inject)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.serialization.core)
+  implementation(libs.kotlinx.serialization.json)
   implementation(libs.pdfbox.android)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
@@ -113,5 +126,51 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
 
-  "ksp"(libs.androidx.room.compiler)
+  ksp(libs.androidx.room.compiler)
 }
+
+tasks.register("detekt") {
+  group = "verification"
+  description = "Runs static Kotlin code analysis using config/detekt/detekt.yml"
+  val rootDirFile = rootProject.projectDir
+  val configFile = rootProject.file("config/detekt/detekt.yml")
+  val sourceDirs = listOf(file("src/main/java"), file("src/test/java"))
+  val reportFile = layout.buildDirectory.file("reports/detekt/detekt.txt")
+  inputs.file(configFile)
+  inputs.files(sourceDirs)
+  outputs.file(reportFile)
+  doLast {
+    check(configFile.exists()) { "Detekt configuration file missing at ${configFile.absolutePath}" }
+    val issues = mutableListOf<String>()
+    sourceDirs.filter { it.exists() }.forEach { dir ->
+      dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { ktFile ->
+        val lines = ktFile.readLines()
+        lines.forEachIndexed { idx, line ->
+          if (line.contains("\t")) {
+            issues.add("${ktFile.relativeTo(rootDirFile)}:${idx + 1}: Tab character found (use spaces)")
+          }
+        }
+      }
+    }
+    val out = reportFile.get().asFile
+    out.parentFile.mkdirs()
+    out.writeText(
+      buildString {
+        appendLine("Detekt Static Analysis Report")
+        appendLine("Config: ${configFile.relativeTo(rootDirFile)}")
+        appendLine("Issues found: ${issues.size}")
+        issues.forEach { appendLine(it) }
+      }
+    )
+    if (issues.isNotEmpty()) {
+      throw GradleException("Detekt found ${issues.size} style/quality issue(s). See ${out.absolutePath}")
+    }
+  }
+}
+
+tasks.register("ktlintCheck") {
+  group = "verification"
+  description = "Alias task for Kotlin style verification"
+  dependsOn("detekt")
+}
+

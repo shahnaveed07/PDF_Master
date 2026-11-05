@@ -14,6 +14,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
+import com.dsc.pdfmaster.data.model.PdfCompressionMode
 import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSName
@@ -390,6 +391,8 @@ object PdfEngine {
                     }
                 } catch (e: Throwable) {
                     if (e is CancellationException) throw e
+                }
+                if (pageCount <= 0) {
                     PDFBoxResourceLoader.init(context)
                     PDDocument.load(file).use { doc ->
                         pageCount = doc.numberOfPages
@@ -420,35 +423,56 @@ object PdfEngine {
         pdfFile: File,
         pageIndex: Int,
         targetWidth: Int = 800,
-        password: String? = null
+        password: String? = null,
+        useCache: Boolean = true,
+        bitmapCache: PdfPageBitmapCache = PdfPageBitmapCache.sharedInstance
     ): Bitmap? = withContext(Dispatchers.IO) {
-        if (!password.isNullOrBlank()) {
-            return@withContext renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, targetWidth, password)
+        val safeWidth = targetWidth.coerceIn(120, 2048)
+        if (useCache) {
+            bitmapCache.get(pdfFile, pageIndex, safeWidth)?.let { cached ->
+                return@withContext cached
+            }
         }
-        try {
-            ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                PdfRenderer(pfd).use { renderer ->
-                    if (pageIndex < 0 || pageIndex >= renderer.pageCount) {
-                        return@withContext null
-                    }
+        val rendered = if (!password.isNullOrBlank()) {
+            renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, safeWidth, password)
+        } else {
+            try {
+                ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    PdfRenderer(pfd).use { renderer ->
+                        val totalPages = renderer.pageCount
+                        if (totalPages <= 0) {
+                            renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, safeWidth, "")
+                        } else if (pageIndex < 0 || pageIndex >= totalPages) {
+                            null
+                        } else {
+                            coroutineContext.ensureActive()
+                            renderer.openPage(pageIndex).use { page ->
+                                val aspectRatio = page.height.toFloat() / page.width.toFloat().coerceAtLeast(1f)
+                                val targetHeight = (safeWidth * aspectRatio).toInt().coerceAtLeast(1)
 
-                    renderer.openPage(pageIndex).use { page ->
-                        val aspectRatio = page.height.toFloat() / page.width.toFloat()
-                        val targetHeight = (targetWidth * aspectRatio).toInt().coerceAtLeast(1)
-
-                        val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-                        val canvas = Canvas(bitmap)
-                        canvas.drawColor(Color.WHITE)
-
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        return@withContext bitmap
+                                val bitmap = Bitmap.createBitmap(safeWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                                try {
+                                    val canvas = Canvas(bitmap)
+                                    canvas.drawColor(Color.WHITE)
+                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                    bitmap
+                                } catch (renderErr: Throwable) {
+                                    bitmap.recycle()
+                                    throw renderErr
+                                }
+                            }
+                        }
                     }
                 }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, safeWidth, password ?: "")
             }
-        } catch (e: Throwable) {
-            if (e is CancellationException) throw e
-            renderPageBitmapWithPdfBox(context, pdfFile, pageIndex, targetWidth, password ?: "")
         }
+        if (rendered != null && useCache && !rendered.isRecycled) {
+            bitmapCache.put(pdfFile, pageIndex, safeWidth, rendered)
+        }
+        rendered
     }
 
     private fun renderPageBitmapWithPdfBox(
@@ -470,7 +494,17 @@ object PdfEngine {
             val cropBox = originalPage.cropBox
             val pageWidth = cropBox.width.coerceAtLeast(1f)
             val scale = (targetWidth.toFloat() / pageWidth).coerceIn(0.2f, 4.0f)
-            pdfBoxRenderer.renderImage(pageIndex, scale * 1.5f)
+            val rawBmp = pdfBoxRenderer.renderImage(pageIndex, scale)
+            if (rawBmp != null && rawBmp.width != targetWidth && rawBmp.width > 0 && rawBmp.height > 0) {
+                val targetHeight = (targetWidth.toFloat() * (rawBmp.height.toFloat() / rawBmp.width.toFloat())).toInt().coerceAtLeast(1)
+                val scaled = Bitmap.createScaledBitmap(rawBmp, targetWidth, targetHeight, true)
+                if (scaled !== rawBmp) {
+                    rawBmp.recycle()
+                }
+                scaled
+            } else {
+                rawBmp
+            }
         } catch (e: Exception) {
             null
         } finally {
@@ -1308,16 +1342,29 @@ object PdfEngine {
         }
     }
 
-    // Compress PDF File Size structurally using PDFBox
+    // Compress PDF File Size using either Smart Image Recompression (keeps text selectable) or Maximum Rasterize mode
     suspend fun compressPdf(
         context: Context,
         pdfFile: File,
         level: PdfCompressionLevel,
         outputFileName: String = "Compressed_${System.currentTimeMillis()}.pdf",
-        password: String? = null
+        password: String? = null,
+        mode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION
     ): File? = withContext(Dispatchers.IO) {
-        if (!pdfFile.exists() || pdfFile.length() == 0L) return@withContext null
-        var outputFile: File? = null
+        if (!pdfFile.exists() || pdfFile.length() == 0L || !hasPdfHeader(pdfFile)) return@withContext null
+        val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
+        val outputFile = getUniqueOutputFile(outputDir, outputFileName)
+
+        if (mode == PdfCompressionMode.RASTERIZE_MAXIMUM) {
+            return@withContext compressPdfByRasterizing(
+                context = context,
+                pdfFile = pdfFile,
+                level = level,
+                outputFile = outputFile,
+                password = password
+            )
+        }
+
         var doc: PDDocument? = null
         try {
             PDFBoxResourceLoader.init(context)
@@ -1326,54 +1373,179 @@ object PdfEngine {
             } else {
                 PDDocument.load(pdfFile)
             }
+            if (doc.isEncrypted) {
+                doc.isAllSecurityToBeRemoved = true
+            }
 
             for (page in doc.pages) {
                 coroutineContext.ensureActive()
                 val resources = page.resources ?: continue
-                for (name in resources.xObjectNames) {
-                    if (resources.isImageXObject(name)) {
-                        val imageObj = resources.getXObject(name) as? PDImageXObject ?: continue
-                        val bitmap = try { imageObj.image } catch (e: Exception) { null } ?: continue
-                        try {
-                            if (!bitmap.hasAlpha()) {
-                                val stream = ByteArrayOutputStream()
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, level.qualityPercentage, stream)
-                                val compressedBytes = stream.toByteArray()
-                                val newImage = JPEGFactory.createFromByteArray(doc, compressedBytes)
-                                resources.put(name, newImage)
-                            }
-                        } finally {
-                            bitmap.recycle()
-                        }
-                    }
-                }
+                recompressImagesInResources(doc, resources, level)
             }
-
-            val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-            outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
             doc.save(outputFile)
             doc.close()
             doc = null
 
             if (outputFile.exists() && outputFile.length() > 0) {
-                if (outputFile.length() >= pdfFile.length()) {
-                    outputFile.delete()
-                    return@withContext pdfFile
+                if (outputFile.length() > pdfFile.length()) {
+                    FileOutputStream(outputFile).use { fos ->
+                        FileInputStream(pdfFile).use { fis ->
+                            fis.copyTo(fos)
+                        }
+                    }
                 }
                 outputFile
             } else {
+                outputFile.delete()
                 null
             }
         } catch (e: CancellationException) {
-            outputFile?.delete()
+            outputFile.delete()
             throw e
         } catch (e: Exception) {
-            outputFile?.delete()
+            outputFile.delete()
             null
         } finally {
             try {
                 doc?.close()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private suspend fun recompressImagesInResources(
+        doc: PDDocument,
+        resources: com.tom_roush.pdfbox.pdmodel.PDResources,
+        level: PdfCompressionLevel
+    ) {
+        for (name in resources.xObjectNames) {
+            coroutineContext.ensureActive()
+            val xObject = try {
+                resources.getXObject(name)
+            } catch (_: Exception) {
+                null
+            } ?: continue
+
+            if (xObject is PDImageXObject) {
+                val rawBitmap = try {
+                    xObject.image
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                var scaledBitmap: Bitmap? = null
+                var flattenedBitmap: Bitmap? = null
+                try {
+                    val targetW = (rawBitmap.width * level.scaleFactor).toInt().coerceAtLeast(1)
+                    val targetH = (rawBitmap.height * level.scaleFactor).toInt().coerceAtLeast(1)
+                    scaledBitmap = if (targetW < rawBitmap.width || targetH < rawBitmap.height) {
+                        Bitmap.createScaledBitmap(rawBitmap, targetW, targetH, true)
+                    } else {
+                        rawBitmap
+                    }
+                    flattenedBitmap = if (scaledBitmap.hasAlpha()) {
+                        val flat = Bitmap.createBitmap(
+                            scaledBitmap.width,
+                            scaledBitmap.height,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(flat)
+                        canvas.drawColor(Color.WHITE)
+                        canvas.drawBitmap(scaledBitmap, 0f, 0f, null)
+                        flat
+                    } else {
+                        scaledBitmap
+                    }
+                    val stream = ByteArrayOutputStream()
+                    flattenedBitmap.compress(Bitmap.CompressFormat.JPEG, level.qualityPercentage, stream)
+                    val compressedBytes = stream.toByteArray()
+                    if (compressedBytes.isNotEmpty()) {
+                        val newImage = JPEGFactory.createFromByteArray(doc, compressedBytes)
+                        resources.put(name, newImage)
+                    }
+                } finally {
+                    if (flattenedBitmap != null && flattenedBitmap !== scaledBitmap && flattenedBitmap !== rawBitmap) {
+                        flattenedBitmap.recycle()
+                    }
+                    if (scaledBitmap != null && scaledBitmap !== rawBitmap) {
+                        scaledBitmap.recycle()
+                    }
+                    rawBitmap.recycle()
+                }
+            } else if (xObject is com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject) {
+                xObject.resources?.let { nestedResources ->
+                    recompressImagesInResources(doc, nestedResources, level)
+                }
+            }
+        }
+    }
+
+    private suspend fun compressPdfByRasterizing(
+        context: Context,
+        pdfFile: File,
+        level: PdfCompressionLevel,
+        outputFile: File,
+        password: String?
+    ): File? {
+        var outDoc: PDDocument? = null
+        try {
+            PDFBoxResourceLoader.init(context)
+            val meta = getPdfMetadata(context, Uri.fromFile(pdfFile), password) ?: return null
+            val pageCount = meta.pageCount
+            if (pageCount <= 0) return null
+
+            outDoc = PDDocument()
+            val targetWidth = (A4_WIDTH * 1.4f * level.scaleFactor).toInt().coerceIn(240, 1200)
+
+            for (pageIndex in 0 until pageCount) {
+                coroutineContext.ensureActive()
+                val pageBitmap = renderPageBitmap(
+                    context = context,
+                    pdfFile = pdfFile,
+                    pageIndex = pageIndex,
+                    targetWidth = targetWidth,
+                    password = password,
+                    useCache = false
+                ) ?: continue
+                try {
+                    val jpegBytes = ByteArrayOutputStream().use { baos ->
+                        pageBitmap.compress(Bitmap.CompressFormat.JPEG, level.qualityPercentage, baos)
+                        baos.toByteArray()
+                    }
+                    val pageRect = com.tom_roush.pdfbox.pdmodel.common.PDRectangle(
+                        A4_WIDTH.toFloat(),
+                        (A4_WIDTH.toFloat() * (pageBitmap.height.toFloat() / pageBitmap.width.toFloat().coerceAtLeast(1f)))
+                    )
+                    val newPage = PDPage(pageRect)
+                    outDoc.addPage(newPage)
+                    val pdImage = JPEGFactory.createFromByteArray(outDoc, jpegBytes)
+                    com.tom_roush.pdfbox.pdmodel.PDPageContentStream(outDoc, newPage).use { cs ->
+                        cs.drawImage(pdImage, 0f, 0f, pageRect.width, pageRect.height)
+                    }
+                } finally {
+                    pageBitmap.recycle()
+                }
+            }
+
+            if (outDoc.numberOfPages <= 0) {
+                outputFile.delete()
+                return null
+            }
+
+            outDoc.save(outputFile)
+            outDoc.close()
+            outDoc = null
+
+            return if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+        } catch (e: CancellationException) {
+            outputFile.delete()
+            throw e
+        } catch (e: Exception) {
+            outputFile.delete()
+            return null
+        } finally {
+            try {
+                outDoc?.close()
             } catch (_: Exception) {
             }
         }

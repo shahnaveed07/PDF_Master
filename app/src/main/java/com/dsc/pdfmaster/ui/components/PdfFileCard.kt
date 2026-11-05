@@ -2,7 +2,6 @@ package com.dsc.pdfmaster.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -30,6 +30,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
 import com.dsc.pdfmaster.pdfengine.PdfEngine
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,6 +63,10 @@ fun PdfFileCard(
     onDelete: () -> Unit,
     onRemoveFromRecent: (() -> Unit)? = null,
     onFileInfo: (() -> Unit)? = null,
+    isAvailable: Boolean = remember(pdf.filePath) {
+        val f = File(pdf.filePath)
+        f.exists() && f.isFile && f.length() > 0L
+    },
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -71,11 +77,15 @@ fun PdfFileCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .clickable(enabled = isAvailable) { onClick() }
             .testTag("pdf_file_card_${pdf.filePath.hashCode()}"),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isAvailable) {
+                MaterialTheme.colorScheme.surface
+            } else {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+            }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -89,13 +99,23 @@ fun PdfFileCard(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(
+                        if (isAvailable) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.errorContainer
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.PictureAsPdf,
-                    contentDescription = "PDF Icon",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    imageVector = if (isAvailable) Icons.Default.PictureAsPdf else Icons.Default.ErrorOutline,
+                    contentDescription = if (isAvailable) "PDF Icon" else "File Unavailable",
+                    tint = if (isAvailable) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    },
                     modifier = Modifier.size(26.dp)
                 )
             }
@@ -116,101 +136,126 @@ fun PdfFileCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isAvailable) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${pdf.pageCount} pages",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = " • ",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = PdfEngine.formatFileSize(pdf.fileSizeBytes),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
                     Text(
-                        text = "${pdf.pageCount} pages",
+                        text = formattedDate,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                } else {
+                    Text(
+                        text = "File no longer available",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("stale_file_badge_${pdf.filePath.hashCode()}")
                     )
                     Text(
-                        text = " • ",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = PdfEngine.formatFileSize(pdf.fileSizeBytes),
-                        fontSize = 11.sp,
+                        text = "Moved, deleted, or permission revoked",
+                        fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = formattedDate,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
             }
 
-            IconButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier.testTag("favorite_button_${pdf.filePath.hashCode()}")
-            ) {
-                Icon(
-                    imageVector = if (pdf.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                    contentDescription = "Favorite",
-                    tint = if (pdf.isFavorite) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "File Options"
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
+            if (!isAvailable) {
+                OutlinedButton(
+                    onClick = { (onRemoveFromRecent ?: onDelete).invoke() },
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("remove_stale_file_button_${pdf.filePath.hashCode()}")
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Share PDF") },
-                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                        onClick = {
-                            showMenu = false
-                            onShare()
-                        }
+                    Text("Remove", fontSize = 12.sp)
+                }
+            } else {
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.testTag("favorite_button_${pdf.filePath.hashCode()}")
+                ) {
+                    Icon(
+                        imageVector = if (pdf.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = "Favorite",
+                        tint = if (pdf.isFavorite) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (onFileInfo != null) {
+                }
+
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "File Options"
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
                         DropdownMenuItem(
-                            text = { Text("File Info") },
-                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                            text = { Text("Share PDF") },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                             onClick = {
                                 showMenu = false
-                                onFileInfo()
+                                onShare()
+                            }
+                        )
+                        if (onFileInfo != null) {
+                            DropdownMenuItem(
+                                text = { Text("File Info") },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onFileInfo()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Rename") },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onRename()
+                            }
+                        )
+                        if (onRemoveFromRecent != null) {
+                            DropdownMenuItem(
+                                text = { Text("Remove from Recent") },
+                                leadingIcon = { Icon(Icons.Default.RemoveCircleOutline, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onRemoveFromRecent()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Delete File", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                showMenu = false
+                                onDelete()
                             }
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text("Rename") },
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                        onClick = {
-                            showMenu = false
-                            onRename()
-                        }
-                    )
-                    if (onRemoveFromRecent != null) {
-                        DropdownMenuItem(
-                            text = { Text("Remove from Recent") },
-                            leadingIcon = { Icon(Icons.Default.RemoveCircleOutline, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onRemoveFromRecent()
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Delete File", color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                        onClick = {
-                            showMenu = false
-                            onDelete()
-                        }
-                    )
                 }
             }
         }

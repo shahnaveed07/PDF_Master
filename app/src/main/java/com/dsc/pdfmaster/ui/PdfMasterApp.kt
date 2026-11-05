@@ -1,7 +1,11 @@
 package com.dsc.pdfmaster.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,16 +16,39 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.dsc.pdfmaster.data.database.PdfDatabase
-import com.dsc.pdfmaster.data.repository.PdfRepository
+import androidx.core.content.ContextCompat
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.dsc.pdfmaster.di.hiltViewModel
 import com.dsc.pdfmaster.ui.components.PdfBottomNavigationBar
 import com.dsc.pdfmaster.ui.components.PdfTopAppBar
 import com.dsc.pdfmaster.ui.components.ProcessingDialog
+import com.dsc.pdfmaster.ui.navigation.CompressPdfRoute
+import com.dsc.pdfmaster.ui.navigation.ConvertPdfRoute
+import com.dsc.pdfmaster.ui.navigation.CreatePdfRoute
+import com.dsc.pdfmaster.ui.navigation.ExtractPagesRoute
+import com.dsc.pdfmaster.ui.navigation.HomeRoute
+import com.dsc.pdfmaster.ui.navigation.ImagesToPdfRoute
+import com.dsc.pdfmaster.ui.navigation.ManagePagesRoute
+import com.dsc.pdfmaster.ui.navigation.MergePdfRoute
+import com.dsc.pdfmaster.ui.navigation.PasswordProtectRoute
+import com.dsc.pdfmaster.ui.navigation.PdfViewerRoute
+import com.dsc.pdfmaster.ui.navigation.RecentFilesRoute
+import com.dsc.pdfmaster.ui.navigation.RemovePasswordRoute
+import com.dsc.pdfmaster.ui.navigation.SettingsRoute
+import com.dsc.pdfmaster.ui.navigation.SplitPdfRoute
+import com.dsc.pdfmaster.ui.navigation.toAppRoute
+import com.dsc.pdfmaster.ui.navigation.toScreenRoute
 import com.dsc.pdfmaster.ui.screens.CompressPdfScreen
 import com.dsc.pdfmaster.ui.screens.ConvertPdfScreen
 import com.dsc.pdfmaster.ui.screens.CreatePdfScreen
@@ -37,23 +64,93 @@ import com.dsc.pdfmaster.ui.screens.RemovePasswordScreen
 import com.dsc.pdfmaster.ui.screens.SettingsScreen
 import com.dsc.pdfmaster.ui.screens.SplitPdfScreen
 import com.dsc.pdfmaster.ui.theme.PdfMasterTheme
+import kotlinx.coroutines.launch
 
 @Composable
 fun PdfMasterApp(
-    viewModel: PdfMasterViewModel
+    viewModel: PdfMasterViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
+    val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val destinationRoute = navBackStackEntry?.destination.toScreenRoute()
+
     val currentRoute by viewModel.currentRoute.collectAsState()
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
     val processingMessage by viewModel.processingMessage.collectAsState()
+    val activeWorkInfo by viewModel.activeWorkInfo.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    var hasRequestedNotificationPermission by rememberSaveable { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        // If denied, operations still run on-device and report progress in-app gracefully.
+    }
+
+    LaunchedEffect(isProcessing, activeWorkInfo) {
+        val workRunning = isProcessing || (activeWorkInfo != null && !activeWorkInfo!!.state.isFinished)
+        if (workRunning && !hasRequestedNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                hasRequestedNotificationPermission = true
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    // Keep NavController in sync with ViewModel route changes
+    LaunchedEffect(currentRoute) {
+        val currentNavScreen = navController.currentDestination.toScreenRoute()
+        if (currentNavScreen != null && currentNavScreen != currentRoute) {
+            val targetAppRoute = currentRoute.toAppRoute()
+            if (currentRoute == ScreenRoute.HOME) {
+                val popped = navController.popBackStack(HomeRoute, inclusive = false)
+                if (!popped) {
+                    navController.navigate(HomeRoute) {
+                        launchSingleTop = true
+                    }
+                }
+            } else if (currentRoute in listOf(ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
+                navController.navigate(targetAppRoute) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            } else {
+                navController.navigate(targetAppRoute) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
+    // Keep ViewModel route in sync when NavController navigates back
+    LaunchedEffect(destinationRoute) {
+        if (destinationRoute != null && destinationRoute != currentRoute) {
+            viewModel.navigateTo(destinationRoute)
+        }
+    }
+
     BackHandler(enabled = currentRoute != ScreenRoute.HOME) {
-        viewModel.navigateBack()
+        if (!navController.popBackStack()) {
+            viewModel.navigateBack()
+        } else {
+            val updated = navController.currentDestination.toScreenRoute() ?: ScreenRoute.HOME
+            if (updated != currentRoute) {
+                viewModel.navigateTo(updated)
+            }
+        }
     }
 
     LaunchedEffect(snackbarMessage) {
@@ -66,12 +163,14 @@ fun PdfMasterApp(
         }
     }
 
+    val effectiveRoute = destinationRoute ?: currentRoute
+
     PdfMasterTheme(darkTheme = isDarkMode) {
         Scaffold(
             topBar = {
-                if (currentRoute == ScreenRoute.HOME || currentRoute == ScreenRoute.RECENT_FILES) {
+                if (effectiveRoute == ScreenRoute.HOME || effectiveRoute == ScreenRoute.RECENT_FILES) {
                     PdfTopAppBar(
-                        title = if (currentRoute == ScreenRoute.HOME) "PDF Master" else "Recent Files",
+                        title = if (effectiveRoute == ScreenRoute.HOME) "PDF Master" else "Recent Files",
                         searchQuery = searchQuery,
                         onSearchQueryChange = { viewModel.setSearchQuery(it) },
                         isDarkMode = isDarkMode,
@@ -80,9 +179,9 @@ fun PdfMasterApp(
                 }
             },
             bottomBar = {
-                if (currentRoute in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
+                if (effectiveRoute in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
                     PdfBottomNavigationBar(
-                        currentRoute = currentRoute,
+                        currentRoute = effectiveRoute,
                         onNavigate = { route -> viewModel.navigateTo(route) }
                     )
                 }
@@ -95,68 +194,98 @@ fun PdfMasterApp(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                Crossfade(targetState = currentRoute, label = "screen_transition") { route ->
-                    when (route) {
-                        ScreenRoute.HOME -> HomeScreen(
+                NavHost(
+                    navController = navController,
+                    startDestination = HomeRoute,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    composable<HomeRoute> {
+                        HomeScreen(
                             viewModel = viewModel,
                             onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) }
                         )
-                        ScreenRoute.RECENT_FILES -> RecentFilesScreen(
+                    }
+                    composable<RecentFilesRoute> {
+                        RecentFilesScreen(
                             viewModel = viewModel,
                             onOpenPdfViewer = { file -> viewModel.openPdfInViewer(file) }
                         )
-                        ScreenRoute.PDF_VIEWER -> PdfViewerScreen(
+                    }
+                    composable<PdfViewerRoute> {
+                        PdfViewerScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.CREATE_PDF -> CreatePdfScreen(
+                    }
+                    composable<CreatePdfRoute> {
+                        CreatePdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.CONVERT_PDF -> ConvertPdfScreen(
+                    }
+                    composable<ConvertPdfRoute> {
+                        ConvertPdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.REMOVE_PASSWORD -> RemovePasswordScreen(
+                    }
+                    composable<RemovePasswordRoute> {
+                        RemovePasswordScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.EXTRACT_PAGES -> ExtractPdfScreen(
+                    }
+                    composable<ExtractPagesRoute> {
+                        ExtractPdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.MERGE_PDF -> MergePdfScreen(
+                    }
+                    composable<MergePdfRoute> {
+                        MergePdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.SPLIT_PDF -> SplitPdfScreen(
+                    }
+                    composable<SplitPdfRoute> {
+                        SplitPdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.COMPRESS_PDF -> CompressPdfScreen(
+                    }
+                    composable<CompressPdfRoute> {
+                        CompressPdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.IMAGES_TO_PDF -> ImagesToPdfScreen(
+                    }
+                    composable<ImagesToPdfRoute> {
+                        ImagesToPdfScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.MANAGE_PAGES -> ManagePagesScreen(
+                    }
+                    composable<ManagePagesRoute> {
+                        ManagePagesScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.PASSWORD_PROTECT -> PasswordProtectScreen(
+                    }
+                    composable<PasswordProtectRoute> {
+                        PasswordProtectScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
-                        ScreenRoute.SETTINGS -> SettingsScreen(
+                    }
+                    composable<SettingsRoute> {
+                        SettingsScreen(
                             viewModel = viewModel,
                             onBack = { viewModel.navigateBack() }
                         )
                     }
                 }
 
-                if (isProcessing && currentRoute != ScreenRoute.HOME) {
+                if (isProcessing && effectiveRoute != ScreenRoute.HOME) {
                     ProcessingDialog(
                         message = processingMessage,
                         onDismissRequest = { viewModel.resetProcessingState() }

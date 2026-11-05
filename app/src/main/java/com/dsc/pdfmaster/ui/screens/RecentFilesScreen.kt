@@ -167,9 +167,17 @@ fun RecentFilesScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(displayList) { pdf ->
+                    val available = viewModel.isPdfAvailable(pdf)
                     PdfFileCard(
                         pdf = pdf,
-                        onClick = { onOpenPdfViewer(File(pdf.filePath)) },
+                        isAvailable = available,
+                        onClick = {
+                            if (available) {
+                                onOpenPdfViewer(File(pdf.filePath))
+                            } else {
+                                viewModel.showNotification("File no longer available")
+                            }
+                        },
                         onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
                         onShare = { sharePdf(context, File(pdf.filePath)) },
                         onRename = {

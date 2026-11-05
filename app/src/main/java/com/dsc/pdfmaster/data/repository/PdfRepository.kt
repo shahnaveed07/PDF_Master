@@ -1,12 +1,14 @@
 package com.dsc.pdfmaster.data.repository
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.dsc.pdfmaster.data.database.RecentPdfDao
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
+import com.dsc.pdfmaster.data.model.PdfCompressionMode
 import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
 import com.dsc.pdfmaster.pdfengine.PdfEngine
@@ -17,8 +19,11 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class PdfRepository(
+@Singleton
+class PdfRepository @Inject constructor(
     private val context: Context,
     private val dao: RecentPdfDao
 ) {
@@ -51,6 +56,47 @@ class PdfRepository(
      * - If two different PDFs share the same filename, it creates a distinct non-colliding file
      *   (e.g., `report (1).pdf`) instead of silently returning the previous unrelated document.
      */
+    /**
+     * Takes a persistable read URI permission for [uri] when granted by the system document picker.
+     */
+    fun takePersistableReadPermission(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        return try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Checks whether a [RecentPdfEntity] points to an existing, readable PDF file or valid persisted URI.
+     */
+    fun isPdfAvailable(pdf: RecentPdfEntity): Boolean {
+        return isFileAvailable(pdf.filePath)
+    }
+
+    fun isFileAvailable(filePath: String): Boolean {
+        if (filePath.isBlank()) return false
+        if (filePath.startsWith("content://")) {
+            return try {
+                val uri = Uri.parse(filePath)
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    pfd.statSize > 0
+                } ?: false
+            } catch (_: Exception) {
+                false
+            }
+        }
+        val file = File(filePath)
+        return file.exists() && file.isFile && file.canRead() && file.length() > 0L
+    }
+
     suspend fun getOrCreateManagedFileFromUri(uri: Uri): File? = withContext(Dispatchers.IO) {
         val scheme = uri.scheme
         if (scheme == "file") {
@@ -62,6 +108,7 @@ class PdfRepository(
             }
         }
         if (scheme == "content") {
+            takePersistableReadPermission(uri)
             var tempImport: File? = null
             try {
                 var fileName: String? = null
@@ -239,8 +286,19 @@ class PdfRepository(
         result
     }
 
-    suspend fun compressPdf(pdfFile: File, level: PdfCompressionLevel, outputName: String): File? = withContext(Dispatchers.IO) {
-        val outputFile = PdfEngine.compressPdf(context, pdfFile, level, outputName)
+    suspend fun compressPdf(
+        pdfFile: File,
+        level: PdfCompressionLevel,
+        outputName: String,
+        mode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION
+    ): File? = withContext(Dispatchers.IO) {
+        val outputFile = PdfEngine.compressPdf(
+            context = context,
+            pdfFile = pdfFile,
+            level = level,
+            outputFileName = outputName,
+            mode = mode
+        )
         if (outputFile != null) {
             registerPdfFile(outputFile)
         }

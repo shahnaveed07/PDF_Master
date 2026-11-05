@@ -95,6 +95,7 @@ fun PasswordProtectScreen(
     val protectResult by viewModel.protectResult.collectAsStateWithLifecycle()
     val isProcessing by viewModel.isProcessing.collectAsStateWithLifecycle()
     val processingMessage by viewModel.processingMessage.collectAsStateWithLifecycle()
+    val selectedKeyLengthBits by viewModel.selectedProtectKeyLengthBits.collectAsStateWithLifecycle()
 
     // Sensitive password states use `remember` (never `rememberSaveable`) so secrets are never written to savedInstanceState Bundles
     var password by remember { mutableStateOf("") }
@@ -275,7 +276,7 @@ fun PasswordProtectScreen(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = "256-bit AES PDF Encryption",
+                            text = "$selectedKeyLengthBits-bit AES PDF Encryption",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -606,6 +607,79 @@ fun PasswordProtectScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.testTag("permissions_disclosure_text")
                         )
+
+                        Text(
+                            text = "Encryption Algorithm Strength",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isProcessing) {
+                                    viewModel.setProtectKeyLengthBits(256)
+                                    viewModel.clearProtectFeedback()
+                                }
+                        ) {
+                            RadioButton(
+                                selected = selectedKeyLengthBits == 256,
+                                onClick = {
+                                    viewModel.setProtectKeyLengthBits(256)
+                                    viewModel.clearProtectFeedback()
+                                },
+                                enabled = !isProcessing,
+                                modifier = Modifier.testTag("encryption_aes_256_radio")
+                            )
+                            Column {
+                                Text(
+                                    text = "256-bit AES (Recommended)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Maximum security (AESV3 / PDF 2.0 standard)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isProcessing) {
+                                    viewModel.setProtectKeyLengthBits(128)
+                                    viewModel.clearProtectFeedback()
+                                }
+                        ) {
+                            RadioButton(
+                                selected = selectedKeyLengthBits == 128,
+                                onClick = {
+                                    viewModel.setProtectKeyLengthBits(128)
+                                    viewModel.clearProtectFeedback()
+                                },
+                                enabled = !isProcessing,
+                                modifier = Modifier.testTag("encryption_aes_128_radio")
+                            )
+                            Column {
+                                Text(
+                                    text = "128-bit AES (Legacy Compatible)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Broad compatibility with older PDF viewers (AESV2)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -949,6 +1023,7 @@ fun PasswordProtectScreen(
                         confirmOwnerPassword = if (requiresOwnerPassword) confirmOwnerPassword else null,
                         allowPrinting = allowPrinting,
                         allowCopy = allowCopy,
+                        keyLengthBits = selectedKeyLengthBits,
                         replaceOriginal = replaceOriginal
                     )
                 },

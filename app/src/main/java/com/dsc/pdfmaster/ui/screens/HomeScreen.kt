@@ -185,13 +185,22 @@ fun HomeScreen(
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
                     items(favoriteList) { fav ->
+                        val available = viewModel.isPdfAvailable(fav)
                         PdfFileCard(
                             pdf = fav,
-                            onClick = { onOpenPdfViewer(File(fav.filePath)) },
+                            isAvailable = available,
+                            onClick = {
+                                if (available) {
+                                    onOpenPdfViewer(File(fav.filePath))
+                                } else {
+                                    viewModel.showNotification("File no longer available")
+                                }
+                            },
                             onToggleFavorite = { viewModel.toggleFavorite(fav.filePath, fav.isFavorite) },
                             onShare = { sharePdfFile(context, File(fav.filePath)) },
                             onRename = { viewModel.renamePdf(File(fav.filePath), "Renamed_${fav.fileName}") },
                             onDelete = { viewModel.deletePdf(fav.filePath) },
+                            onRemoveFromRecent = { viewModel.removePdfFromRecent(fav.filePath) },
                             modifier = Modifier.width(280.dp)
                         )
                     }
@@ -248,13 +257,22 @@ fun HomeScreen(
             }
         } else {
             items(recentList.take(3)) { pdf ->
+                val available = viewModel.isPdfAvailable(pdf)
                 PdfFileCard(
                     pdf = pdf,
-                    onClick = { onOpenPdfViewer(File(pdf.filePath)) },
+                    isAvailable = available,
+                    onClick = {
+                        if (available) {
+                            onOpenPdfViewer(File(pdf.filePath))
+                        } else {
+                            viewModel.showNotification("File no longer available")
+                        }
+                    },
                     onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
                     onShare = { sharePdfFile(context, File(pdf.filePath)) },
                     onRename = { viewModel.renamePdf(File(pdf.filePath), "Renamed_${pdf.fileName}") },
                     onDelete = { viewModel.deletePdf(pdf.filePath) },
+                    onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
                     modifier = Modifier.padding(bottom = 10.dp)
                 )
             }

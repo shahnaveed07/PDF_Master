@@ -1,5 +1,25 @@
 package com.dsc.pdfmaster.data.model
 
+enum class PdfCompressionMode(
+    val label: String,
+    val subtitle: String,
+    val keepsTextSelectable: Boolean,
+    val warningMessage: String?
+) {
+    IMAGE_RECOMPRESSION(
+        label = "Smart Image Recompression (Default)",
+        subtitle = "Downscales and re-encodes embedded images while keeping text selectable",
+        keepsTextSelectable = true,
+        warningMessage = null
+    ),
+    RASTERIZE_MAXIMUM(
+        label = "Maximum compression (text becomes image)",
+        subtitle = "Rasterizes entire pages into compressed images for maximum size reduction",
+        keepsTextSelectable = false,
+        warningMessage = "Warning: Maximum compression converts every page into a flattened image. Text will no longer be selectable or searchable."
+    )
+}
+
 enum class PdfCompressionLevel(
     val label: String,
     val subtitle: String,

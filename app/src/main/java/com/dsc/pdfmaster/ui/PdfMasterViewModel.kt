@@ -10,12 +10,19 @@ import androidx.lifecycle.viewModelScope
 import com.dsc.pdfmaster.data.database.PdfDatabase
 import com.dsc.pdfmaster.data.database.RecentPdfEntity
 import com.dsc.pdfmaster.data.model.PdfCompressionLevel
+import com.dsc.pdfmaster.data.model.PdfCompressionMode
+import com.dsc.pdfmaster.data.model.PdfOperationError
 import com.dsc.pdfmaster.data.model.PdfPageItem
 import com.dsc.pdfmaster.data.model.PdfTool
 import com.dsc.pdfmaster.data.model.PdfToolType
 import com.dsc.pdfmaster.data.repository.PdfRepository
+import com.dsc.pdfmaster.di.AppModule
 import com.dsc.pdfmaster.pdfengine.OfficeToPdfConverter
 import com.dsc.pdfmaster.pdfengine.PdfEngine
+import com.dsc.pdfmaster.pdfengine.PdfPageBitmapCache
+import com.dsc.pdfmaster.work.PdfWorkInfo
+import com.dsc.pdfmaster.work.PdfWorkManager
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,6 +35,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import javax.inject.Inject
 
 enum class ScreenRoute {
     HOME,
@@ -65,12 +73,59 @@ data class CompressionResultState(
     val isComplete: Boolean = false
 )
 
-class PdfMasterViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class PdfMasterViewModel @Inject constructor(
+    application: Application,
+    val repository: PdfRepository,
+    val workManager: PdfWorkManager,
+    val bitmapCache: PdfPageBitmapCache
+) : AndroidViewModel(application) {
 
-    private val db = PdfDatabase.getDatabase(application)
-    val repository = PdfRepository(application, db.recentPdfDao())
+    constructor(application: Application) : this(
+        application = application,
+        repository = AppModule.providePdfRepository(
+            application,
+            AppModule.provideRecentPdfDao(AppModule.providePdfDatabase(application))
+        ),
+        workManager = AppModule.providePdfWorkManager(
+            application,
+            AppModule.providePdfRepository(
+                application,
+                AppModule.provideRecentPdfDao(AppModule.providePdfDatabase(application))
+            )
+        ),
+        bitmapCache = AppModule.providePdfPageBitmapCache()
+    )
 
     private var activeOperationJob: Job? = null
+
+    val activeWorkInfo: StateFlow<PdfWorkInfo?> = workManager.activeWorkInfo
+
+    private val _operationError = MutableStateFlow<PdfOperationError?>(null)
+    val operationError: StateFlow<PdfOperationError?> = _operationError.asStateFlow()
+
+    private val _selectedCompressionMode = MutableStateFlow(PdfCompressionMode.IMAGE_RECOMPRESSION)
+    val selectedCompressionMode: StateFlow<PdfCompressionMode> = _selectedCompressionMode.asStateFlow()
+
+    private val _selectedProtectKeyLengthBits = MutableStateFlow(256)
+    val selectedProtectKeyLengthBits: StateFlow<Int> = _selectedProtectKeyLengthBits.asStateFlow()
+
+    fun setCompressionMode(mode: PdfCompressionMode) {
+        _selectedCompressionMode.value = mode
+        _compressionResult.value = null
+    }
+
+    fun setProtectKeyLengthBits(bits: Int) {
+        _selectedProtectKeyLengthBits.value = if (bits == 128) 128 else 256
+    }
+
+    fun clearOperationError() {
+        _operationError.value = null
+    }
+
+    fun isPdfAvailable(pdf: RecentPdfEntity): Boolean {
+        return repository.isPdfAvailable(pdf)
+    }
 
     private val _currentRoute = MutableStateFlow(ScreenRoute.HOME)
     val currentRoute: StateFlow<ScreenRoute> = _currentRoute.asStateFlow()
@@ -299,6 +354,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     fun resetProcessingState() {
         activeOperationJob?.cancel()
         activeOperationJob = null
+        workManager.cancelActiveWork()
         _isProcessing.value = false
     }
 
@@ -558,14 +614,20 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Compress PDF
-    fun executeCompressPdf(file: File, level: PdfCompressionLevel, outputName: String) {
+    fun executeCompressPdf(
+        file: File,
+        level: PdfCompressionLevel,
+        outputName: String,
+        mode: PdfCompressionMode = _selectedCompressionMode.value
+    ) {
         if (_isProcessing.value) return
         activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
-            _processingMessage.value = "Compressing PDF with ${level.label}..."
+            _operationError.value = null
+            _processingMessage.value = "Compressing PDF with ${level.label} (${mode.label})..."
             try {
                 val originalSize = file.length()
-                val resultFile = repository.compressPdf(file, level, outputName)
+                val resultFile = repository.compressPdf(file, level, outputName, mode)
                 if (resultFile != null) {
                     val compressedSize = resultFile.length()
                     _compressionResult.value = CompressionResultState(
@@ -577,12 +639,17 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                     _selectedPdfFile.value = resultFile
                     _userNotification.value = "Compressed successfully!"
                 } else {
-                    _userNotification.value = "Compression failed."
+                    val err = PdfOperationError.CorruptedPdf("Compression failed.")
+                    _operationError.value = err
+                    _userNotification.value = err.userMessage
                 }
             } catch (e: CancellationException) {
+                _operationError.value = PdfOperationError.Cancelled("Compression cancelled")
                 _userNotification.value = "Compression cancelled"
             } catch (e: Exception) {
-                _userNotification.value = "Compression failed due to an error"
+                val err = PdfOperationError.fromThrowable(e, "Compression failed due to an error")
+                _operationError.value = err
+                _userNotification.value = err.userMessage
             } finally {
                 _isProcessing.value = false
             }
@@ -764,6 +831,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
         confirmOwnerPassword: String? = ownerPassword,
         allowPrinting: Boolean = true,
         allowCopy: Boolean = true,
+        keyLengthBits: Int = _selectedProtectKeyLengthBits.value,
         replaceOriginal: Boolean = false
     ) {
         if (_isProcessing.value) return
@@ -816,11 +884,14 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
+        val effectiveKeyBits = if (keyLengthBits == 128) 128 else 256
+        _selectedProtectKeyLengthBits.value = effectiveKeyBits
+
         activeOperationJob = viewModelScope.launch {
             _isProcessing.value = true
             _protectPdfErrorMessage.value = null
             _protectResult.value = null
-            _processingMessage.value = "Applying 256-bit AES encryption & verifying..."
+            _processingMessage.value = "Applying $effectiveKeyBits-bit AES encryption & verifying..."
             try {
                 val desiredOutputName = outputName.trim().ifBlank {
                     "${targetFile.nameWithoutExtension}_protected.pdf"
@@ -834,6 +905,7 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                     currentPassword = currentPassword,
                     allowPrinting = allowPrinting,
                     allowCopy = allowCopy,
+                    keyLengthBits = effectiveKeyBits,
                     outputName = desiredOutputName,
                     replaceOriginal = replaceOriginal
                 )
@@ -866,9 +938,10 @@ class PdfMasterViewModel(application: Application) : AndroidViewModel(applicatio
                 _protectPdfErrorMessage.value = "Encryption cancelled. Original file is unchanged."
                 _userNotification.value = "Encryption cancelled"
             } catch (e: Exception) {
-                val msg = "Failed to encrypt PDF: ${e.localizedMessage ?: "Unexpected error"}"
-                _protectPdfErrorMessage.value = msg
-                _userNotification.value = msg
+                val err = PdfOperationError.fromThrowable(e, "Failed to encrypt PDF: ${e.localizedMessage ?: "Unexpected error"}")
+                _operationError.value = err
+                _protectPdfErrorMessage.value = err.userMessage
+                _userNotification.value = err.userMessage
             } finally {
                 _isProcessing.value = false
             }

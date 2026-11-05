@@ -59,8 +59,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -68,7 +68,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -106,14 +108,17 @@ fun PdfViewerScreen(
     var showFileInfoDialog by remember { mutableStateOf(false) }
     var renameInputText by remember { mutableStateOf("") }
 
-    val renderedBitmaps = remember { mutableStateListOf<Bitmap?>() }
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val displayTargetWidth = remember(configuration.screenWidthDp, density.density) {
+        with(density) { configuration.screenWidthDp.dp.roundToPx() }.coerceIn(360, 1080)
+    }
     val lazyListState = rememberLazyListState()
 
     LaunchedEffect(currentPdfFile, verifiedPassword) {
         val file = currentPdfFile
         if (file != null && file.exists()) {
             isLoading = true
-            renderedBitmaps.clear()
             withContext(Dispatchers.IO) {
                 try {
                     val isEncrypted = PdfEngine.checkPasswordProtected(context, file)
@@ -121,16 +126,10 @@ fun PdfViewerScreen(
 
                     if (!isPasswordProtected) {
                         val meta = PdfEngine.getPdfMetadata(context, android.net.Uri.fromFile(file), verifiedPassword)
-                        val count = meta?.pageCount ?: 0
-                        pageCount = count
-
-                        val initialList = MutableList<Bitmap?>(count) { null }
-                        withContext(Dispatchers.Main) {
-                            renderedBitmaps.addAll(initialList)
-                        }
+                        pageCount = meta?.pageCount ?: 0
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
+                    pageCount = 0
                 } finally {
                     withContext(Dispatchers.Main) {
                         isLoading = false
@@ -138,6 +137,7 @@ fun PdfViewerScreen(
                 }
             }
         } else {
+            pageCount = 0
             isLoading = false
         }
     }
@@ -394,7 +394,7 @@ fun PdfViewerScreen(
                     }
                 }
             }
-        } else if (isLoading && renderedBitmaps.isEmpty()) {
+        } else if (isLoading && pageCount == 0) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -419,21 +419,31 @@ fun PdfViewerScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(renderedBitmaps.size) { index ->
-                        val bitmap = renderedBitmaps[index]
-                        
-                        LaunchedEffect(index, verifiedPassword) {
-                            if (bitmap == null && currentPdfFile != null) {
-                                val file = currentPdfFile!!
-                                withContext(Dispatchers.IO) {
-                                    val renderedBmp = PdfEngine.renderPageBitmap(context, file, index, targetWidth = 720, password = verifiedPassword)
-                                    withContext(Dispatchers.Main) {
-                                        renderedBitmaps[index] = renderedBmp
-                                    }
+                    items(count = pageCount, key = { index -> index }) { index ->
+                        val file = currentPdfFile
+                        val bitmap by produceState<Bitmap?>(
+                            initialValue = file?.let {
+                                viewModel.bitmapCache.get(it, index, displayTargetWidth)
+                            },
+                            key1 = file?.absolutePath,
+                            key2 = index,
+                            key3 = verifiedPassword
+                        ) {
+                            if (value == null && file != null) {
+                                value = withContext(Dispatchers.IO) {
+                                    PdfEngine.renderPageBitmap(
+                                        context = context,
+                                        pdfFile = file,
+                                        pageIndex = index,
+                                        targetWidth = displayTargetWidth,
+                                        password = verifiedPassword,
+                                        useCache = true,
+                                        bitmapCache = viewModel.bitmapCache
+                                    )
                                 }
                             }
                         }
-                        
+
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -443,9 +453,10 @@ fun PdfViewerScreen(
                             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                if (bitmap != null) {
+                                val bmp = bitmap
+                                if (bmp != null && !bmp.isRecycled) {
                                     Image(
-                                        bitmap = bitmap.asImageBitmap(),
+                                        bitmap = bmp.asImageBitmap(),
                                         contentDescription = "PDF Page ${index + 1}",
                                         modifier = Modifier.fillMaxWidth()
                                     )
