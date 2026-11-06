@@ -330,8 +330,7 @@ class PdfRepository @Inject constructor(
         try {
             val entities = dao.getAllRecentPdfsSnapshot()
             for (entity in entities) {
-                val file = File(entity.filePath)
-                if (!file.exists()) {
+                if (!isFileAvailable(entity.filePath)) {
                     dao.deletePdfByPath(entity.filePath)
                     prunedCount++
                 }

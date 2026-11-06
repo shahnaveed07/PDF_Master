@@ -438,6 +438,12 @@ private fun RecentFilesListPane(
             }
         }
 
+        val pinnedPaths = remember(pinnedOrFavoritePdfs) { pinnedOrFavoritePdfs.map { it.filePath }.toSet() }
+        val unpinnedRecentPdfs = remember(recentPdfs, pinnedPaths) {
+            recentPdfs.filterNot { it.filePath in pinnedPaths }
+        }
+        val searchQuery by viewModel.searchQuery.collectAsState()
+
         if (displayList.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -456,53 +462,160 @@ private fun RecentFilesListPane(
                         modifier = Modifier.size(64.dp)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = if (selectedTabIndex == 0) {
-                            stringResource(R.string.empty_recent_files)
-                        } else {
-                            stringResource(R.string.empty_starred_files)
-                        },
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = if (selectedTabIndex == 0) {
-                            stringResource(R.string.empty_recent_files_hint)
-                        } else {
-                            stringResource(R.string.empty_starred_files_hint)
-                        },
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                        textAlign = TextAlign.Center
-                    )
+                    if (searchQuery.isNotBlank()) {
+                        Text(
+                            text = "No matching documents",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "No documents match \"$searchQuery\"",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.setSearchQuery("") },
+                            modifier = Modifier.testTag("clear_search_filter_button")
+                        ) {
+                            Text("Clear Search")
+                        }
+                    } else {
+                        Text(
+                            text = if (selectedTabIndex == 0) {
+                                stringResource(R.string.empty_recent_files)
+                            } else {
+                                stringResource(R.string.empty_starred_files)
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (selectedTabIndex == 0) {
+                                stringResource(R.string.empty_recent_files_hint)
+                            } else {
+                                stringResource(R.string.empty_starred_files_hint)
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .weight(1f),
+                    .weight(1f)
+                    .testTag("recent_files_lazy_column"),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (selectedTabIndex == 0 && pinnedOrFavoritePdfs.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.header_favorites_pinned),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 1.sp,
-                            modifier = Modifier
-                                .padding(bottom = 4.dp)
-                                .semantics { heading() }
-                                .testTag("favorites_pinned_section_header")
-                        )
+                if (selectedTabIndex == 0) {
+                    if (pinnedOrFavoritePdfs.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.header_favorites_pinned),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier
+                                    .padding(bottom = 4.dp)
+                                    .semantics { heading() }
+                                    .testTag("favorites_pinned_section_header")
+                            )
+                        }
+                        items(pinnedOrFavoritePdfs, key = { "pinned_${it.filePath}" }) { pdf ->
+                            val available = viewModel.isPdfAvailable(pdf)
+                            PdfFileCard(
+                                pdf = pdf,
+                                isAvailable = available,
+                                onClick = {
+                                    if (available) {
+                                        onOpenFile(File(pdf.filePath))
+                                    } else {
+                                        viewModel.showNotification(unavailableMessage)
+                                    }
+                                },
+                                onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
+                                onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
+                                onShare = { onShareFile(File(pdf.filePath)) },
+                                onRename = { onRequestRename(pdf) },
+                                onDelete = { onRequestDelete(pdf) },
+                                onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
+                                onFileInfo = { onRequestInfo(pdf) }
+                            )
+                        }
+                        if (unpinnedRecentPdfs.isNotEmpty()) {
+                            item {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = stringResource(R.string.header_all_recent_files),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    letterSpacing = 1.sp,
+                                    modifier = Modifier
+                                        .padding(bottom = 4.dp)
+                                        .semantics { heading() }
+                                )
+                            }
+                            items(unpinnedRecentPdfs, key = { "recent_${it.filePath}" }) { pdf ->
+                                val available = viewModel.isPdfAvailable(pdf)
+                                PdfFileCard(
+                                    pdf = pdf,
+                                    isAvailable = available,
+                                    onClick = {
+                                        if (available) {
+                                            onOpenFile(File(pdf.filePath))
+                                        } else {
+                                            viewModel.showNotification(unavailableMessage)
+                                        }
+                                    },
+                                    onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
+                                    onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
+                                    onShare = { onShareFile(File(pdf.filePath)) },
+                                    onRename = { onRequestRename(pdf) },
+                                    onDelete = { onRequestDelete(pdf) },
+                                    onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
+                                    onFileInfo = { onRequestInfo(pdf) }
+                                )
+                            }
+                        }
+                    } else {
+                        items(recentPdfs, key = { "recent_${it.filePath}" }) { pdf ->
+                            val available = viewModel.isPdfAvailable(pdf)
+                            PdfFileCard(
+                                pdf = pdf,
+                                isAvailable = available,
+                                onClick = {
+                                    if (available) {
+                                        onOpenFile(File(pdf.filePath))
+                                    } else {
+                                        viewModel.showNotification(unavailableMessage)
+                                    }
+                                },
+                                onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
+                                onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
+                                onShare = { onShareFile(File(pdf.filePath)) },
+                                onRename = { onRequestRename(pdf) },
+                                onDelete = { onRequestDelete(pdf) },
+                                onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
+                                onFileInfo = { onRequestInfo(pdf) }
+                            )
+                        }
                     }
-                    items(pinnedOrFavoritePdfs, key = { "pinned_${it.filePath}" }) { pdf ->
+                } else {
+                    items(pinnedOrFavoritePdfs, key = { "fav_${it.filePath}" }) { pdf ->
                         val available = viewModel.isPdfAvailable(pdf)
                         PdfFileCard(
                             pdf = pdf,
@@ -523,41 +636,6 @@ private fun RecentFilesListPane(
                             onFileInfo = { onRequestInfo(pdf) }
                         )
                     }
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.header_all_recent_files),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
-                            modifier = Modifier
-                                .padding(bottom = 4.dp)
-                                .semantics { heading() }
-                        )
-                    }
-                }
-
-                items(displayList, key = { "list_${it.filePath}" }) { pdf ->
-                    val available = viewModel.isPdfAvailable(pdf)
-                    PdfFileCard(
-                        pdf = pdf,
-                        isAvailable = available,
-                        onClick = {
-                            if (available) {
-                                onOpenFile(File(pdf.filePath))
-                            } else {
-                                viewModel.showNotification(unavailableMessage)
-                            }
-                        },
-                        onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
-                        onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
-                        onShare = { onShareFile(File(pdf.filePath)) },
-                        onRename = { onRequestRename(pdf) },
-                        onDelete = { onRequestDelete(pdf) },
-                        onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
-                        onFileInfo = { onRequestInfo(pdf) }
-                    )
                 }
             }
         }

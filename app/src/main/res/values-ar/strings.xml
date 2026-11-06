@@ -32,6 +32,8 @@
     <string name="tool_create_pdf_subtitle">نص / صور</string>
     <string name="tool_convert_title">تحويل</string>
     <string name="tool_convert_subtitle">أوفيس / صور / نص</string>
+    <string name="tool_office_to_pdf_title">أوفيس إلى PDF</string>
+    <string name="tool_office_to_pdf_subtitle">Word و Excel و PowerPoint</string>
     <string name="tool_compress_title">ضغط</string>
     <string name="tool_compress_subtitle">تقليل الحجم / دفعة</string>
     <string name="tool_protect_title">حماية PDF</string>

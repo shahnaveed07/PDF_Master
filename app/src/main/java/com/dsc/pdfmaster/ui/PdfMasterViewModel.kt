@@ -409,6 +409,9 @@ class PdfMasterViewModel @Inject constructor(
         }
 
         if (route in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
+            if (previousRoute !in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES)) {
+                _searchQuery.value = ""
+            }
             backStack.clear()
             backStack.addLast(ScreenRoute.HOME)
             if (route != ScreenRoute.HOME) {
@@ -1573,6 +1576,11 @@ class PdfMasterViewModel @Inject constructor(
                 _isProcessing.value = false
             }
         }
+    }
+
+    fun setConversionOutputForTesting(files: List<File>, summary: String? = null) {
+        _conversionOutputFiles.value = files
+        _conversionResultSummary.value = summary
     }
 
     fun resetExtractionResult() {

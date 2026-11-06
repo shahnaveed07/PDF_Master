@@ -32,6 +32,8 @@
     <string name="tool_create_pdf_subtitle">متن / تصاویر</string>
     <string name="tool_convert_title">تبدیل کریں</string>
     <string name="tool_convert_subtitle">آفس / تصاویر / TXT</string>
+    <string name="tool_office_to_pdf_title">آفس سے پی ڈی ایف</string>
+    <string name="tool_office_to_pdf_subtitle">Word, Excel اور PowerPoint</string>
     <string name="tool_compress_title">کمپریس کریں</string>
     <string name="tool_compress_subtitle">سائز کم کریں / بیچ</string>
     <string name="tool_protect_title">پی ڈی ایف محفوظ کریں</string>

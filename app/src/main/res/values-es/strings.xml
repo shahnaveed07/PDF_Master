@@ -32,6 +32,8 @@
     <string name="tool_create_pdf_subtitle">Texto / Imágenes</string>
     <string name="tool_convert_title">Convertir</string>
     <string name="tool_convert_subtitle">Office / Imágenes / TXT</string>
+    <string name="tool_office_to_pdf_title">Office a PDF</string>
+    <string name="tool_office_to_pdf_subtitle">Word, Excel y PowerPoint</string>
     <string name="tool_compress_title">Comprimir</string>
     <string name="tool_compress_subtitle">Reducir tamaño / Lotes</string>
     <string name="tool_protect_title">Proteger PDF</string>

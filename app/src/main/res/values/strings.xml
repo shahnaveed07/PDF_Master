@@ -34,6 +34,8 @@
     <string name="tool_create_pdf_subtitle">Text / Images</string>
     <string name="tool_convert_title">Convert</string>
     <string name="tool_convert_subtitle">Office / Images / TXT</string>
+    <string name="tool_office_to_pdf_title">Office to PDF</string>
+    <string name="tool_office_to_pdf_subtitle">Word, Excel, PowerPoint</string>
     <string name="tool_compress_title">Compress</string>
     <string name="tool_compress_subtitle">Reduce size / Batch</string>
     <string name="tool_protect_title">Protect PDF</string>

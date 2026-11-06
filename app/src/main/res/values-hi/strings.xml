@@ -32,6 +32,8 @@
     <string name="tool_create_pdf_subtitle">टेक्स्ट / चित्र</string>
     <string name="tool_convert_title">कन्वर्ट करें</string>
     <string name="tool_convert_subtitle">ऑफिस / चित्र / TXT</string>
+    <string name="tool_office_to_pdf_title">ऑफ़िस से पीडीएफ</string>
+    <string name="tool_office_to_pdf_subtitle">Word, Excel और PowerPoint</string>
     <string name="tool_compress_title">कम्प्रेस करें</string>
     <string name="tool_compress_subtitle">आकार घटाएं / बैच</string>
     <string name="tool_protect_title">पीडीएफ सुरक्षित करें</string>

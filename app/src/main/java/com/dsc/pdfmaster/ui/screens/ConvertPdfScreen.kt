@@ -7,6 +7,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +42,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.EditNote
@@ -87,6 +91,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -383,8 +388,7 @@ fun ConvertPdfScreen(
                                                 }
                                                 activeWorkflowMode = mode
                                             }
-                                            .testTag("option_card_${mode.tag}")
-                                            .testTag("mode_chip_${mode.tag}"),
+                                            .testTag("option_card_${mode.tag}"),
                                         shape = RoundedCornerShape(Dimens.CornerMedium),
                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
@@ -1084,8 +1088,258 @@ fun ConvertPdfScreen(
                             }
                         }
                     }
+
+                    // Conversion Results View
+                    if (outputFiles.isNotEmpty()) {
+                        ConversionResultCard(
+                            outputFiles = outputFiles,
+                            summary = conversionResultSummary,
+                            layoutDisclosure = conversionLayoutDisclosure,
+                            onViewPdf = { file ->
+                                viewModel.openPdfInViewer(file)
+                            },
+                            onShareFile = { file ->
+                                val mimeType = if (file.name.endsWith(".pdf", ignoreCase = true)) {
+                                    "application/pdf"
+                                } else if (file.name.endsWith(".png", ignoreCase = true)) {
+                                    "image/png"
+                                } else if (file.name.endsWith(".jpg", ignoreCase = true) || file.name.endsWith(".jpeg", ignoreCase = true)) {
+                                    "image/jpeg"
+                                } else {
+                                    "*/*"
+                                }
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = mimeType
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Share converted file"))
+                            },
+                            onReset = {
+                                viewModel.clearConversionState()
+                            }
+                        )
+                    }
+
+                    // Extracted Text Results View
+                    if (!extractedText.isNullOrBlank()) {
+                        ExtractedTextResultCard(
+                            extractedText = extractedText!!,
+                            context = context
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun ConversionResultCard(
+    outputFiles: List<File>,
+    summary: String?,
+    layoutDisclosure: String?,
+    onViewPdf: (File) -> Unit,
+    onShareFile: (File) -> Unit,
+    onReset: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(Dimens.CornerMedium),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("conversion_result_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Conversion Successful",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (!summary.isNullOrBlank()) {
+                        Text(
+                            text = summary,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("conversion_result_summary")
+                        )
+                    }
+                }
+            }
+
+            if (!layoutDisclosure.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(Dimens.CornerSmall),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = layoutDisclosure,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            outputFiles.forEach { file ->
+                Card(
+                    shape = RoundedCornerShape(Dimens.CornerSmall),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = file.name,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = PdfEngine.formatFileSize(file.length()),
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (file.name.endsWith(".pdf", ignoreCase = true)) {
+                                Button(
+                                    onClick = { onViewPdf(file) },
+                                    shape = RoundedCornerShape(Dimens.CornerSmall),
+                                    modifier = Modifier.testTag("view_converted_pdf_button")
+                                ) {
+                                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("View PDF", fontSize = 12.sp)
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { onShareFile(file) },
+                                shape = RoundedCornerShape(Dimens.CornerSmall),
+                                modifier = Modifier.testTag("share_converted_file_button")
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Share", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            OutlinedButton(
+                onClick = onReset,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("convert_another_file_button"),
+                shape = RoundedCornerShape(Dimens.CornerMedium)
+            ) {
+                Text("Convert Another File")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExtractedTextResultCard(
+    extractedText: String,
+    context: Context
+) {
+    Card(
+        shape = RoundedCornerShape(Dimens.CornerMedium),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("extracted_text_result_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Extracted Text",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Extracted PDF Text", extractedText)
+                        clipboard.setPrimaryClip(clip)
+                    },
+                    shape = RoundedCornerShape(Dimens.CornerSmall),
+                    modifier = Modifier.testTag("copy_extracted_text_button")
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Copy All", fontSize = 12.sp)
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(Dimens.CornerSmall),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = extractedText,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(10.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+

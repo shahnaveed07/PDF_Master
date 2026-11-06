@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FolderOpen
@@ -41,15 +42,23 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Transform
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,10 +73,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsc.pdfmaster.R
+import com.dsc.pdfmaster.data.database.RecentPdfEntity
+import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.ScreenRoute
 import com.dsc.pdfmaster.ui.adaptive.WindowSizeClass
 import com.dsc.pdfmaster.ui.adaptive.rememberWindowSizeClass
+import com.dsc.pdfmaster.ui.components.CompactPdfCard
 import com.dsc.pdfmaster.ui.components.PdfFileCard
 import com.dsc.pdfmaster.ui.theme.Dimens
 import com.dsc.pdfmaster.ui.util.FormFactorPreviews
@@ -96,6 +108,11 @@ fun HomeScreen(
     val context = LocalContext.current
     val recentList by viewModel.recentPdfs.collectAsState()
     val favoriteList by viewModel.pinnedOrFavoritePdfs.collectAsState()
+
+    var fileToRename by remember { mutableStateOf<RecentPdfEntity?>(null) }
+    var fileToDelete by remember { mutableStateOf<RecentPdfEntity?>(null) }
+    var fileInfoToShow by remember { mutableStateOf<RecentPdfEntity?>(null) }
+    var renameInputText by remember { mutableStateOf("") }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -166,6 +183,13 @@ fun HomeScreen(
             subtitleRes = R.string.tool_convert_subtitle,
             icon = Icons.Default.Transform,
             tag = "action_convert_pdf",
+            onClick = { viewModel.navigateTo(ScreenRoute.CONVERT_PDF) }
+        ),
+        QuickActionItem(
+            titleRes = R.string.tool_office_to_pdf_title,
+            subtitleRes = R.string.tool_office_to_pdf_subtitle,
+            icon = Icons.Default.Description,
+            tag = "action_office_to_pdf",
             onClick = { viewModel.navigateTo(ScreenRoute.CONVERT_PDF) }
         ),
         QuickActionItem(
@@ -282,7 +306,7 @@ fun HomeScreen(
                     ) {
                         items(recentList.take(6), key = { "top_recent_${it.filePath}" }) { pdf ->
                             val available = viewModel.isPdfAvailable(pdf)
-                            PdfFileCard(
+                            CompactPdfCard(
                                 pdf = pdf,
                                 isAvailable = available,
                                 onClick = {
@@ -295,10 +319,13 @@ fun HomeScreen(
                                 onToggleFavorite = { viewModel.toggleFavorite(pdf.filePath, pdf.isFavorite) },
                                 onTogglePinned = { viewModel.togglePinned(pdf.filePath, pdf.isPinned) },
                                 onShare = { sharePdfFile(context, File(pdf.filePath), shareChooserTitle) },
-                                onRename = { viewModel.renamePdf(File(pdf.filePath), "Renamed_${pdf.fileName}") },
-                                onDelete = { viewModel.deletePdf(pdf.filePath) },
+                                onRename = {
+                                    fileToRename = pdf
+                                    renameInputText = pdf.fileName.removeSuffix(".pdf")
+                                },
+                                onDelete = { fileToDelete = pdf },
                                 onRemoveFromRecent = { viewModel.removePdfFromRecent(pdf.filePath) },
-                                modifier = Modifier.width(280.dp)
+                                onFileInfo = { fileInfoToShow = pdf }
                             )
                         }
                     }
@@ -335,7 +362,7 @@ fun HomeScreen(
                     ) {
                         items(favoriteList, key = { "fav_${it.filePath}" }) { fav ->
                             val available = viewModel.isPdfAvailable(fav)
-                            PdfFileCard(
+                            CompactPdfCard(
                                 pdf = fav,
                                 isAvailable = available,
                                 onClick = {
@@ -348,10 +375,13 @@ fun HomeScreen(
                                 onToggleFavorite = { viewModel.toggleFavorite(fav.filePath, fav.isFavorite) },
                                 onTogglePinned = { viewModel.togglePinned(fav.filePath, fav.isPinned) },
                                 onShare = { sharePdfFile(context, File(fav.filePath), shareChooserTitle) },
-                                onRename = { viewModel.renamePdf(File(fav.filePath), "Renamed_${fav.fileName}") },
-                                onDelete = { viewModel.deletePdf(fav.filePath) },
+                                onRename = {
+                                    fileToRename = fav
+                                    renameInputText = fav.fileName.removeSuffix(".pdf")
+                                },
+                                onDelete = { fileToDelete = fav },
                                 onRemoveFromRecent = { viewModel.removePdfFromRecent(fav.filePath) },
-                                modifier = Modifier.width(280.dp)
+                                onFileInfo = { fileInfoToShow = fav }
                             )
                         }
                     }
@@ -408,6 +438,131 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    // Rename Dialog
+    fileToRename?.let { pdfEntity ->
+        AlertDialog(
+            onDismissRequest = { fileToRename = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.dialog_rename_title),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.semantics { heading() }
+                )
+            },
+            text = {
+                Column {
+                    Text(stringResource(R.string.dialog_rename_prompt), fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = renameInputText,
+                        onValueChange = { renameInputText = it },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("home_rename_input_field")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renameInputText.isNotBlank()) {
+                            viewModel.renamePdf(File(pdfEntity.filePath), renameInputText.trim())
+                            fileToRename = null
+                        }
+                    },
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("home_confirm_rename_button")
+                ) {
+                    Text(stringResource(R.string.action_save))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { fileToRename = null },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    // Delete Dialog
+    fileToDelete?.let { pdfEntity ->
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.dialog_delete_title),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.semantics { heading() }
+                )
+            },
+            text = {
+                Text(stringResource(R.string.dialog_delete_message, pdfEntity.fileName))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deletePdf(pdfEntity.filePath)
+                        fileToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("home_confirm_delete_button")
+                ) {
+                    Text(stringResource(R.string.action_delete_permanently))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { fileToDelete = null },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    // File Info Dialog
+    fileInfoToShow?.let { pdfEntity ->
+        val formattedDate = remember(pdfEntity.lastAccessedTimestamp) {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                .format(java.util.Date(pdfEntity.lastAccessedTimestamp))
+        }
+        AlertDialog(
+            onDismissRequest = { fileInfoToShow = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.dialog_file_info_title),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.semantics { heading() }
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Name: ${pdfEntity.fileName}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("Size: ${PdfEngine.formatFileSize(pdfEntity.fileSizeBytes)}", fontSize = 13.sp)
+                    Text("Pages: ${pdfEntity.pageCount}", fontSize = 13.sp)
+                    Text("Path: ${pdfEntity.filePath}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Last Opened: $formattedDate", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { fileInfoToShow = null },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        )
     }
 }
 
