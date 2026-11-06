@@ -34,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -93,14 +92,17 @@ fun PdfTopAppBar(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(MaterialTheme.colorScheme.primary)
+                            .testTag("pdf_logo_container"),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.PictureAsPdf,
                             contentDescription = stringResource(R.string.cd_pdf_logo),
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .testTag("pdf_logo_icon")
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
