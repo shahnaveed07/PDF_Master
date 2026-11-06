@@ -842,6 +842,28 @@ class PdfMasterViewModel @Inject constructor(
         }
     }
 
+    fun movePage(fromIndex: Int, toIndex: Int) {
+        val list = _pdfPagesList.value.toMutableList()
+        if (fromIndex in list.indices && toIndex in list.indices && fromIndex != toIndex) {
+            val item = list.removeAt(fromIndex)
+            list.add(toIndex, item)
+            _pdfPagesList.value = list
+        }
+    }
+
+    fun movePageUp(index: Int) {
+        if (index > 0) {
+            movePage(index, index - 1)
+        }
+    }
+
+    fun movePageDown(index: Int) {
+        val size = _pdfPagesList.value.size
+        if (index in 0 until size - 1) {
+            movePage(index, index + 1)
+        }
+    }
+
     fun executeSaveOrganizedPages(file: File, outputName: String) {
         if (_isProcessing.value) return
         val currentPages = _pdfPagesList.value

@@ -83,6 +83,7 @@ fun SplitPdfScreen(
     }
     val rangeError = (parsedRange as? PageRangeResult.Error)?.message
     val isRangeValid = parsedRange is PageRangeResult.Success
+    val isOutputNameValid = outputNameInput.trim().isNotBlank()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -212,6 +213,12 @@ fun SplitPdfScreen(
                                 onValueChange = { outputNameInput = it },
                                 label = { Text("Output PDF File Name") },
                                 singleLine = true,
+                                isError = !isOutputNameValid && currentPdf != null,
+                                supportingText = {
+                                    if (!isOutputNameValid && currentPdf != null) {
+                                        Text("Please enter a valid output file name", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("split_output_name_field")
@@ -221,12 +228,12 @@ fun SplitPdfScreen(
                         Button(
                             onClick = {
                                 val successPages = (parsedRange as? PageRangeResult.Success)?.pageNumbers
-                                if (currentPdf != null && !successPages.isNullOrEmpty()) {
+                                if (currentPdf != null && !successPages.isNullOrEmpty() && isOutputNameValid) {
                                     val indices = successPages.map { it - 1 }
                                     viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
                                 }
                             },
-                            enabled = currentPdf != null && isRangeValid && !isProcessing,
+                            enabled = currentPdf != null && isRangeValid && isOutputNameValid && !isProcessing,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(Dimens.ButtonHeight)
@@ -321,6 +328,12 @@ fun SplitPdfScreen(
                         onValueChange = { outputNameInput = it },
                         label = { Text("Output PDF File Name") },
                         singleLine = true,
+                        isError = !isOutputNameValid && currentPdf != null,
+                        supportingText = {
+                            if (!isOutputNameValid && currentPdf != null) {
+                                Text("Please enter a valid output file name", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("split_output_name_field")
@@ -331,12 +344,12 @@ fun SplitPdfScreen(
                     Button(
                         onClick = {
                             val successPages = (parsedRange as? PageRangeResult.Success)?.pageNumbers
-                            if (currentPdf != null && !successPages.isNullOrEmpty()) {
+                            if (currentPdf != null && !successPages.isNullOrEmpty() && isOutputNameValid) {
                                 val indices = successPages.map { it - 1 }
                                 viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
                             }
                         },
-                        enabled = currentPdf != null && isRangeValid && !isProcessing,
+                        enabled = currentPdf != null && isRangeValid && isOutputNameValid && !isProcessing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(Dimens.ButtonHeight)

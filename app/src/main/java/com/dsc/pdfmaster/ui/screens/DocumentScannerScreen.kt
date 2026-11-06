@@ -121,12 +121,12 @@ fun DocumentScannerScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "ML Kit Document Scanner (Zero Camera Permission)",
+                        text = "Document Scanner & Enhancer (Zero Camera Permission)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
                     Text(
-                        text = "Scan physical pages using the system ML Kit Document Scanner or import page captures with automatic perspective & high-contrast document filters.",
+                        text = "Scan physical pages via the Android system scanner or import page captures with local contrast, grayscale, and black & white document enhancement filters.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

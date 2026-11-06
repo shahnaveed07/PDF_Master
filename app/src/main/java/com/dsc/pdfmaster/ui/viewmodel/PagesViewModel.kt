@@ -98,6 +98,32 @@ class PagesViewModel @Inject constructor(
         }
     }
 
+    fun movePage(fromIndex: Int, toIndex: Int) {
+        _uiState.update { current ->
+            val list = current.pages.toMutableList()
+            if (fromIndex in list.indices && toIndex in list.indices && fromIndex != toIndex) {
+                val item = list.removeAt(fromIndex)
+                list.add(toIndex, item)
+                current.copy(pages = list)
+            } else {
+                current
+            }
+        }
+    }
+
+    fun movePageUp(index: Int) {
+        if (index > 0) {
+            movePage(index, index - 1)
+        }
+    }
+
+    fun movePageDown(index: Int) {
+        val size = _uiState.value.pages.size
+        if (index in 0 until size - 1) {
+            movePage(index, index + 1)
+        }
+    }
+
     fun executeSaveOrganizedPages(
         file: File,
         outputName: String,

@@ -1408,7 +1408,9 @@ object PdfEngine {
 
             for (file in pdfFiles) {
                 coroutineContext.ensureActive()
-                if (!file.exists() || file.length() == 0L) continue
+                if (!file.exists() || file.length() == 0L || !hasPdfHeader(file)) {
+                    return@withContext null
+                }
                 val password = passwords[file]
                 val doc = try {
                     if (!password.isNullOrBlank()) {
@@ -1426,7 +1428,8 @@ object PdfEngine {
                 }
             }
 
-            if (mergedDoc.numberOfPages == 0) {
+            val expectedTotalPages = loadedDocs.sumOf { it.numberOfPages }
+            if (mergedDoc.numberOfPages != expectedTotalPages || mergedDoc.numberOfPages == 0) {
                 return@withContext null
             }
 
@@ -1435,7 +1438,12 @@ object PdfEngine {
 
             mergedDoc.save(outputFile)
 
-            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+            if (outputFile.exists() && outputFile.length() > 0 && validateGeneratedPdfFile(context, outputFile, expectedMinPages = expectedTotalPages)) {
+                outputFile
+            } else {
+                outputFile.delete()
+                null
+            }
         } catch (e: CancellationException) {
             outputFile?.delete()
             throw e

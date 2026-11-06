@@ -20,12 +20,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Save
@@ -106,7 +108,7 @@ fun ManagePagesScreen(
                     // Left Pane: Page Thumbnails Grid
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "TAP TO SELECT FOR DELETION, USE ROTATE ICON TO ROTATE",
+                            text = "TAP TO DELETE, ROTATE ICON TO ROTATE, ARROWS TO REORDER",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -116,7 +118,7 @@ fun ManagePagesScreen(
                         Spacer(modifier = Modifier.height(Dimens.Spacing8))
 
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 110.dp),
+                            columns = GridCells.Adaptive(minSize = 120.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f),
@@ -124,9 +126,13 @@ fun ManagePagesScreen(
                             horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing12),
                             verticalArrangement = Arrangement.spacedBy(Dimens.Spacing12)
                         ) {
-                            items(pageItems) { item ->
+                            itemsIndexed(pageItems) { index, item ->
                                 PageThumbnailCard(
                                     item = item,
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < pageItems.size - 1,
+                                    onMoveUp = { viewModel.movePageUp(index) },
+                                    onMoveDown = { viewModel.movePageDown(index) },
                                     onToggleDelete = { viewModel.togglePageSelectionForDelete(item.pageIndex) },
                                     onRotate = { viewModel.rotatePage(item.pageIndex) }
                                 )
@@ -212,7 +218,7 @@ fun ManagePagesScreen(
                     Spacer(modifier = Modifier.height(Dimens.Spacing8))
 
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 110.dp),
+                        columns = GridCells.Adaptive(minSize = 120.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
@@ -220,9 +226,13 @@ fun ManagePagesScreen(
                         horizontalArrangement = Arrangement.spacedBy(Dimens.Spacing12),
                         verticalArrangement = Arrangement.spacedBy(Dimens.Spacing12)
                     ) {
-                        items(pageItems) { item ->
+                        itemsIndexed(pageItems) { index, item ->
                             PageThumbnailCard(
                                 item = item,
+                                canMoveUp = index > 0,
+                                canMoveDown = index < pageItems.size - 1,
+                                onMoveUp = { viewModel.movePageUp(index) },
+                                onMoveDown = { viewModel.movePageDown(index) },
                                 onToggleDelete = { viewModel.togglePageSelectionForDelete(item.pageIndex) },
                                 onRotate = { viewModel.rotatePage(item.pageIndex) }
                             )
@@ -257,6 +267,10 @@ fun ManagePagesScreen(
 @Composable
 private fun PageThumbnailCard(
     item: com.dsc.pdfmaster.data.model.PdfPageItem,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
     onToggleDelete: () -> Unit,
     onRotate: () -> Unit
 ) {
@@ -321,6 +335,52 @@ private fun PageThumbnailCard(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+
+            // Move Left / Move Right Buttons for page reordering
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (canMoveUp) {
+                    IconButton(
+                        onClick = onMoveUp,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Move Left",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.size(28.dp))
+                }
+
+                if (canMoveDown) {
+                    IconButton(
+                        onClick = onMoveDown,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Move Right",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.size(28.dp))
+                }
             }
 
             // Delete Indicator Badge

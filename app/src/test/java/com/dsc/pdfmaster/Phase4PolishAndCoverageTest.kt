@@ -450,4 +450,38 @@ class Phase4PolishAndCoverageTest {
             )
         }
     }
+
+    @Test
+    fun managePages_pageReorderingMovesPagesForwardAndBackward() {
+        val mainVm = PdfMasterViewModel(
+            application = application,
+            repository = fakeRepository,
+            workManager = fakeWorkManager,
+            bitmapCache = PdfPageBitmapCache()
+        )
+
+        val dummyPages = listOf(
+            PdfPageItem(pageIndex = 0, displayPageNumber = 1, rotationDegrees = 0),
+            PdfPageItem(pageIndex = 1, displayPageNumber = 2, rotationDegrees = 0),
+            PdfPageItem(pageIndex = 2, displayPageNumber = 3, rotationDegrees = 0)
+        )
+
+        val field = PdfMasterViewModel::class.java.getDeclaredField("_pdfPagesList")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stateFlow = field.get(mainVm) as MutableStateFlow<List<PdfPageItem>>
+        stateFlow.value = dummyPages
+
+        // Move first item down: 0 -> 1
+        mainVm.movePageDown(0)
+        assertEquals(listOf(1, 0, 2), mainVm.pdfPagesList.value.map { it.pageIndex })
+
+        // Move item at index 1 up: 1 -> 0
+        mainVm.movePageUp(1)
+        assertEquals(listOf(0, 1, 2), mainVm.pdfPagesList.value.map { it.pageIndex })
+
+        // Move item at index 2 to index 0
+        mainVm.movePage(2, 0)
+        assertEquals(listOf(2, 0, 1), mainVm.pdfPagesList.value.map { it.pageIndex })
+    }
 }

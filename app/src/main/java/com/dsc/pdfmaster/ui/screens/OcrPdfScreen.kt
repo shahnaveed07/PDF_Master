@@ -133,13 +133,13 @@ fun OcrPdfScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "100% Offline Bundled ML Kit Text Recognition",
+                            text = "100% Offline On-Device OCR (Searchable PDF)",
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Uses the bundled on-device Latin OCR model so text recognition works completely offline with zero network calls. Bundled model APK size impact: ~${uiState.bundledModelCompressedMb} MB compressed APK download size (~${uiState.bundledModelUncompressedMb} MB uncompressed model assets). Generates an invisible searchable text layer (PDF Tr 3) over your scanned pages.",
+                            text = "Processes documents locally on your device with zero network calls and full privacy. Analyzes lines and layout to generate a standards-compliant invisible searchable text layer (PDF Tr 3) directly over your scanned pages.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

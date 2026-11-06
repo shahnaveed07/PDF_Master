@@ -576,4 +576,52 @@ class PdfEngineTest {
             multiPagePdf.delete()
         }
     }
+
+    @Test
+    fun testMergePdfsRejectsCorruptedOrMissingFileWithoutSilentlySkipping() {
+        runBlocking {
+            val pdf1 = createTestPdf(File(context.cacheDir, "merge_test_1.pdf"), 2)
+            val pdf2 = createTestPdf(File(context.cacheDir, "merge_test_2.pdf"), 3)
+            val corruptFile = File(context.cacheDir, "corrupt_file.pdf").apply {
+                writeText("Not a valid PDF header content")
+            }
+
+            // Merge with corrupted file must fail completely (not silently skip corrupt file)
+            val failedMerge = PdfEngine.mergePdfs(context, listOf(pdf1, corruptFile, pdf2), "merge_failed.pdf")
+            org.junit.Assert.assertNull("mergePdfs must reject merge if any input file is corrupted", failedMerge)
+
+            // Valid merge of pdf1 (2 pages) + pdf2 (3 pages) must yield exactly 5 pages
+            val successfulMerge = PdfEngine.mergePdfs(context, listOf(pdf1, pdf2), "merge_success.pdf")
+            assertNotNull(successfulMerge)
+            assertTrue(successfulMerge!!.exists())
+            PDDocument.load(successfulMerge).use { doc ->
+                assertEquals("Merged PDF page count must equal exact sum of input document page counts", 5, doc.numberOfPages)
+            }
+
+            pdf1.delete()
+            pdf2.delete()
+            corruptFile.delete()
+            successfulMerge.delete()
+        }
+    }
+
+    @Test
+    fun testExtremeAspectRatiosSafeDownsampling() {
+        // Extreme height (50 x 12000)
+        val s1 = PdfEngine.calculateSafeImageSampleSize(50, 12000, maxDimension = 2048)
+        assertTrue("Sample size should scale down extreme height", s1 >= 4)
+        assertTrue(12000 / s1 <= 2048)
+
+        // Extreme width (12000 x 50)
+        val s2 = PdfEngine.calculateSafeImageSampleSize(12000, 50, maxDimension = 2048)
+        assertTrue("Sample size should scale down extreme width", s2 >= 4)
+        assertTrue(12000 / s2 <= 2048)
+
+        // Gigantic dimensions (20000 x 20000)
+        val s3 = PdfEngine.calculateSafeImageSampleSize(20000, 20000, maxDimension = 2048, maxPixelBudget = 16_000_000L)
+        assertTrue(s3 >= 8)
+        val w = 20000L / s3
+        val h = 20000L / s3
+        assertTrue(w * h <= 16_000_000L)
+    }
 }
