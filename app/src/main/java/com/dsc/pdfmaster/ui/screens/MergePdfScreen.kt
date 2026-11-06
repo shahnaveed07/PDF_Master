@@ -72,6 +72,7 @@ fun MergePdfScreen(
     val context = LocalContext.current
     val windowInfo = rememberWindowInfo()
     val mergeFiles by viewModel.selectedFilesForMerge.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
     var outputFileNameInput by remember { mutableStateOf("Merged_Document_${System.currentTimeMillis() / 1000}.pdf") }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -81,17 +82,14 @@ fun MergePdfScreen(
             val fileList = mutableListOf<File>()
             for (uri in uris) {
                 try {
-                    val inputStream = context.contentResolver.openInputStream(uri)
-                    if (inputStream != null) {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
                         val temp = File.createTempFile("merge_input_", ".pdf", context.cacheDir)
-                        val fos = FileOutputStream(temp)
-                        inputStream.copyTo(fos)
-                        inputStream.close()
-                        fos.close()
+                        temp.outputStream().use { fos ->
+                            inputStream.copyTo(fos)
+                        }
                         fileList.add(temp)
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
                 }
             }
             viewModel.addFilesForMerge(fileList)
@@ -221,7 +219,7 @@ fun MergePdfScreen(
 
                         Button(
                             onClick = { viewModel.executeMergePdfs(outputFileNameInput.trim()) },
-                            enabled = mergeFiles.size >= 2,
+                            enabled = mergeFiles.size >= 2 && !isProcessing,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(Dimens.ButtonHeight)
@@ -305,7 +303,7 @@ fun MergePdfScreen(
 
                     Button(
                         onClick = { viewModel.executeMergePdfs(outputFileNameInput.trim()) },
-                        enabled = mergeFiles.size >= 2,
+                        enabled = mergeFiles.size >= 2 && !isProcessing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(Dimens.ButtonHeight)

@@ -43,6 +43,28 @@ class PdfEngineTest {
         return file
     }
 
+    private fun createTestPdfWithImage(file: File): File {
+        val doc = PDDocument()
+        val page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+        doc.addPage(page)
+        val bmp = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        canvas.drawColor(android.graphics.Color.LTGRAY)
+        for (y in 0 until 400 step 4) {
+            for (x in 0 until 400 step 4) {
+                bmp.setPixel(x, y, android.graphics.Color.rgb((x * 37) % 255, (y * 53) % 255, ((x + y) * 19) % 255))
+            }
+        }
+        val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bmp)
+        bmp.recycle()
+        com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page).use { cs ->
+            cs.drawImage(pdImage, 50f, 200f, 300f, 300f)
+        }
+        doc.save(file)
+        doc.close()
+        return file
+    }
+
     @Test
     fun testMergePdfs() {
         runBlocking {
@@ -191,7 +213,8 @@ class PdfEngineTest {
     @Test
     fun testCompressPdf() {
         runBlocking {
-            val source = createTestPdf(File(context.cacheDir, "compress_src.pdf"), 2)
+            val source = createTestPdfWithImage(File(context.cacheDir, "compress_src.pdf"))
+            val originalSize = source.length()
 
             val compressed = PdfEngine.compressPdf(
                 context = context,
@@ -203,9 +226,55 @@ class PdfEngineTest {
             assertNotNull(compressed)
             assertTrue(compressed!!.exists())
             assertTrue(compressed.length() > 0)
+            assertTrue("Expected compressed (${compressed.length()}) < original ($originalSize)", compressed.length() < originalSize)
 
             source.delete()
             compressed.delete()
+        }
+    }
+
+    @Test
+    fun testCompressPdfAlreadyOptimalReturnsNoReductionAndDoesNotOverwrite() {
+        runBlocking {
+            val source = createTestPdf(File(context.cacheDir, "compress_optimal.pdf"), 2)
+
+            val detailedResult = PdfEngine.compressPdfDetailed(
+                context = context,
+                pdfFile = source,
+                level = PdfCompressionLevel.MEDIUM,
+                outputFileName = "compress_optimal_out.pdf"
+            )
+
+            assertTrue("Expected NoReduction, got: $detailedResult", detailedResult is PdfEngine.CompressResult.NoReduction)
+
+            val compressedFile = PdfEngine.compressPdf(
+                context = context,
+                pdfFile = source,
+                level = PdfCompressionLevel.MEDIUM,
+                outputFileName = "compress_optimal_out_2.pdf"
+            )
+
+            org.junit.Assert.assertNull(compressedFile)
+            assertFalse(File(context.filesDir, "output_pdfs/compress_optimal_out_2.pdf").exists())
+
+            source.delete()
+        }
+    }
+
+    @Test
+    fun testCompressPdfCorruptedFailsSafely() {
+        runBlocking {
+            val corrupted = File(context.cacheDir, "corrupted.pdf").apply { writeText("NOT_A_VALID_PDF") }
+            val res = PdfEngine.compressPdfDetailed(
+                context = context,
+                pdfFile = corrupted,
+                level = PdfCompressionLevel.MEDIUM,
+                outputFileName = "corrupted_out.pdf"
+            )
+            assertTrue(res is PdfEngine.CompressResult.Error)
+            val fileRes = PdfEngine.compressPdf(context, corrupted, PdfCompressionLevel.MEDIUM, "corrupted_out_2.pdf")
+            org.junit.Assert.assertNull(fileRes)
+            corrupted.delete()
         }
     }
 
@@ -393,6 +462,118 @@ class PdfEngineTest {
                 encryptedFile.delete()
                 decryptedFile.delete()
             }
+        }
+    }
+
+    @Test
+    fun testCalculateSafeImageSampleSizeIndependentDimensions() {
+        // Extreme portrait: width fits in 2048, but height = 16384
+        val sampleSizePortrait = PdfEngine.calculateSafeImageSampleSize(1000, 16384, maxDimension = 2048)
+        assertTrue("Sample size should be at least 8 to downsample 16384 below 2048", sampleSizePortrait >= 8)
+        assertTrue(16384 / sampleSizePortrait <= 2048)
+
+        // Extreme landscape: height fits in 2048, but width = 16384
+        val sampleSizeLandscape = PdfEngine.calculateSafeImageSampleSize(16384, 1000, maxDimension = 2048)
+        assertTrue("Sample size should be at least 8 to downsample 16384 below 2048", sampleSizeLandscape >= 8)
+        assertTrue(16384 / sampleSizeLandscape <= 2048)
+
+        // Small image within budget
+        val sampleSizeSmall = PdfEngine.calculateSafeImageSampleSize(800, 600, maxDimension = 2048)
+        assertEquals(1, sampleSizeSmall)
+
+        // Total pixel budget enforcement: 5000 x 5000 = 25M pixels (> 16M budget)
+        val sampleSizePixelBudget = PdfEngine.calculateSafeImageSampleSize(4000, 4000, maxDimension = 4096, maxPixelBudget = 16_000_000L)
+        assertTrue(sampleSizePixelBudget >= 1)
+        val decodedW = 4000L / sampleSizePixelBudget
+        val decodedH = 4000L / sampleSizePixelBudget
+        assertTrue(decodedW * decodedH <= 16_000_000L)
+    }
+
+    @Test
+    fun testIsSafeBitmapAllocation() {
+        // Safe allocation (1000x1000 ARGB = 4MB)
+        assertTrue(PdfEngine.isSafeBitmapAllocation(1000, 1000))
+
+        // Negative or zero dimensions
+        assertFalse(PdfEngine.isSafeBitmapAllocation(0, 1000))
+        assertFalse(PdfEngine.isSafeBitmapAllocation(-10, 1000))
+
+        // Overflow: 1,000,000 x 1,000,000 pixels
+        assertFalse(PdfEngine.isSafeBitmapAllocation(1_000_000, 1_000_000))
+
+        // Exceeds maxBytes (e.g. 5000x5000 = 25M pixels * 4 = 100MB > 64MB)
+        assertFalse(PdfEngine.isSafeBitmapAllocation(5000, 5000, maxBytes = 64L * 1024 * 1024))
+    }
+
+    @Test
+    fun testSplitPdfRejectsOutOfBoundsPages() {
+        runBlocking {
+            val testPdf = createTestPdf(File(context.cacheDir, "split_bounds_test.pdf"), 3)
+            // Request page index 5 when total pages is 3 -> must return null
+            val res = PdfEngine.splitPdf(context, testPdf, listOf(0, 5), "split_out_invalid.pdf")
+            org.junit.Assert.assertNull("splitPdf must reject out-of-bounds indices", res)
+
+            // Valid split: page index 0 and 2
+            val validRes = PdfEngine.splitPdf(context, testPdf, listOf(0, 2), "split_out_valid.pdf")
+            assertNotNull(validRes)
+            assertTrue(validRes!!.exists())
+            PDDocument.load(validRes).use { doc ->
+                assertEquals(2, doc.numberOfPages)
+            }
+
+            testPdf.delete()
+            validRes.delete()
+        }
+    }
+
+    @Test
+    fun testMultilingualUnicodeTextPdfGeneration() {
+        runBlocking {
+            val scripts = listOf(
+                "English" to "The quick brown fox jumps over the lazy dog. 1234567890.",
+                "Hindi" to "नमस्ते दुनिया! पीडीएफ मास्टर में आपका स्वागत है। यह एक परीक्षण दस्तावेज़ है।",
+                "Urdu" to "پی ڈی ایف ماسٹر میں خوش آمدید۔ یہ ایک کثیر لسانی دستاویز ہے۔",
+                "Arabic" to "مرحبا بكم في تطبيق بي دي اف ماستر. هذا مستند اختبار باللغة العربية.",
+                "Mixed" to "Hello नमस्ते World दुनिया! Symbols: € £ ¥ ₹ © ® § ± × ÷",
+                "LineBreaks" to "First paragraph.\n\n\nSecond paragraph with multiple blank lines.\n\nEnd."
+            )
+
+            for ((name, content) in scripts) {
+                val pdf = PdfEngine.createTextPdf(
+                    context = context,
+                    textContent = content,
+                    outputFileName = "text_test_$name.pdf"
+                )
+                assertNotNull("PDF creation failed for $name", pdf)
+                assertTrue("Generated PDF should exist for $name", pdf!!.exists())
+                assertTrue("Generated PDF should be valid for $name", PdfEngine.validateGeneratedPdfFile(context, pdf, expectedMinPages = 1))
+
+                PDDocument.load(pdf).use { doc ->
+                    assertTrue("Expected at least 1 page for $name", doc.numberOfPages >= 1)
+                }
+                pdf.delete()
+            }
+
+            // Multi-page document test
+            val longContent = buildString {
+                for (p in 1..40) {
+                    appendLine("Paragraph $p: Multilingual test paragraph with Hindi नमस्ते, Urdu خوش آمدید, Arabic مرحبا, and English text repeated across multiple pages to verify proper page breaking and font layout.")
+                    appendLine()
+                }
+            }
+            val multiPagePdf = PdfEngine.createTextPdf(
+                context = context,
+                textContent = longContent,
+                outputFileName = "text_test_multipage.pdf"
+            )
+            assertNotNull("Multi-page PDF creation failed", multiPagePdf)
+            assertTrue(multiPagePdf!!.exists())
+            assertTrue(PdfEngine.validateGeneratedPdfFile(context, multiPagePdf, expectedMinPages = 2))
+
+            PDDocument.load(multiPagePdf).use { doc ->
+                assertTrue("Expected multiple pages, got ${doc.numberOfPages}", doc.numberOfPages >= 2)
+            }
+            multiPagePdf.delete()
         }
     }
 }

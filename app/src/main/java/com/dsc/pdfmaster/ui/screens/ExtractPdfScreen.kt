@@ -107,6 +107,7 @@ fun ExtractPdfScreen(
     val scope = rememberCoroutineScope()
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
     val extractionResult by viewModel.extractionResult.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
 
     var totalPages by remember { mutableIntStateOf(0) }
     var selectedPageIndices by remember { mutableStateOf<Set<Int>>(emptySet()) }
@@ -496,7 +497,8 @@ fun ExtractPdfScreen(
                 val isExtractEnabled = currentPdf != null &&
                         selectedPageIndices.isNotEmpty() &&
                         rangeErrorMessage == null &&
-                        outputNameInput.isNotBlank()
+                        outputNameInput.isNotBlank() &&
+                        !isProcessing
 
                 Button(
                     onClick = {

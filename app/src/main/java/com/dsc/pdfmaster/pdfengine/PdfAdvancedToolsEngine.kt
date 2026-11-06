@@ -33,9 +33,10 @@ import com.dsc.pdfmaster.data.model.SignaturePlacement
 import com.dsc.pdfmaster.data.model.SignatureStroke
 import com.dsc.pdfmaster.data.model.WatermarkConfig
 import com.dsc.pdfmaster.data.model.WatermarkPosition
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.dsc.pdfmaster.mlkit.vision.common.InputImage
+import com.dsc.pdfmaster.mlkit.vision.text.TextRecognition
+import com.dsc.pdfmaster.mlkit.vision.text.TextRecognizer
+import com.dsc.pdfmaster.mlkit.vision.text.latin.TextRecognizerOptions
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -1084,7 +1085,7 @@ object PdfAdvancedToolsEngine {
 
     private fun appendOcrPageToDocument(
         outDoc: PDDocument,
-        recognizer: com.google.mlkit.vision.text.TextRecognizer,
+        recognizer: TextRecognizer,
         pageBitmap: Bitmap,
         pageIndex: Int
     ): OcrPageSummary {
@@ -1375,25 +1376,34 @@ object PdfAdvancedToolsEngine {
             )
 
             val outName = "${file.nameWithoutExtension}_compressed.pdf"
-            val compressed = PdfEngine.compressPdf(
+            val compressResult = PdfEngine.compressPdfDetailed(
                 context = context,
                 pdfFile = file,
                 level = level,
                 outputFileName = outName,
                 mode = mode
             )
-            if (compressed != null && compressed.exists()) {
-                itemResults[index] = itemResults[index].copy(
-                    status = BatchItemStatus.SUCCEEDED,
-                    outputSizeBytes = compressed.length(),
-                    outputFile = compressed,
-                    message = "Saved ${compressed.name}"
-                )
-            } else {
-                itemResults[index] = itemResults[index].copy(
-                    status = BatchItemStatus.FAILED,
-                    message = "Failed to compress ${file.name}"
-                )
+            when (compressResult) {
+                is PdfEngine.CompressResult.Success -> {
+                    itemResults[index] = itemResults[index].copy(
+                        status = BatchItemStatus.SUCCEEDED,
+                        outputSizeBytes = compressResult.compressedSize,
+                        outputFile = compressResult.file,
+                        message = "Saved ${compressResult.file.name}"
+                    )
+                }
+                is PdfEngine.CompressResult.NoReduction -> {
+                    itemResults[index] = itemResults[index].copy(
+                        status = BatchItemStatus.FAILED,
+                        message = "Already optimal (no reduction)"
+                    )
+                }
+                is PdfEngine.CompressResult.Error -> {
+                    itemResults[index] = itemResults[index].copy(
+                        status = BatchItemStatus.FAILED,
+                        message = compressResult.message
+                    )
+                }
             }
         }
 

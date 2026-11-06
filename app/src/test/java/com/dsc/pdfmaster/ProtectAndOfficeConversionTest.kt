@@ -947,4 +947,57 @@ class ProtectAndOfficeConversionTest {
             (corruptResult as OfficeToPdfConverter.OfficeConversionResult.Error).error
         )
     }
+
+    @Test
+    fun testOfficeArchiveZipSecurityHardening() {
+        runBlocking {
+            // Test 1: Path traversal archive
+            val traversalFile = File(context.cacheDir, "traversal.docx")
+            java.util.zip.ZipOutputStream(traversalFile.outputStream()).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("../malicious.xml"))
+                zos.write("<xml>danger</xml>".toByteArray())
+                zos.closeEntry()
+                zos.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+                zos.write("<w:document><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>".toByteArray())
+                zos.closeEntry()
+            }
+
+            val traversalResult = PdfEngine.convertOfficeToPdfDetailed(
+                context = context,
+                uri = Uri.fromFile(traversalFile),
+                expectedType = OfficeToPdfConverter.OfficeDocumentType.WORD_DOCX,
+                outputName = "traversal_out.pdf"
+            )
+            assertTrue("Archive with path traversal must be rejected", traversalResult is OfficeToPdfConverter.OfficeConversionResult.Error)
+            assertEquals(
+                OfficeToPdfConverter.OfficeConversionError.INVALID_OR_CORRUPTED_PACKAGE,
+                (traversalResult as OfficeToPdfConverter.OfficeConversionResult.Error).error
+            )
+            traversalFile.delete()
+
+            // Test 2: Duplicate normalized path collision (word/document.xml vs word\document.xml)
+            val duplicateFile = File(context.cacheDir, "duplicate.docx")
+            java.util.zip.ZipOutputStream(duplicateFile.outputStream()).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("word/document.xml"))
+                zos.write("<xml>valid</xml>".toByteArray())
+                zos.closeEntry()
+                zos.putNextEntry(java.util.zip.ZipEntry("word\\document.xml"))
+                zos.write("<xml>shadow</xml>".toByteArray())
+                zos.closeEntry()
+            }
+
+            val duplicateResult = PdfEngine.convertOfficeToPdfDetailed(
+                context = context,
+                uri = Uri.fromFile(duplicateFile),
+                expectedType = OfficeToPdfConverter.OfficeDocumentType.WORD_DOCX,
+                outputName = "duplicate_out.pdf"
+            )
+            assertTrue("Archive with duplicate paths must be rejected", duplicateResult is OfficeToPdfConverter.OfficeConversionResult.Error)
+            assertEquals(
+                OfficeToPdfConverter.OfficeConversionError.INVALID_OR_CORRUPTED_PACKAGE,
+                (duplicateResult as OfficeToPdfConverter.OfficeConversionResult.Error).error
+            )
+            duplicateFile.delete()
+        }
+    }
 }

@@ -1,4 +1,4 @@
-package com.google.mlkit.vision.common
+package com.dsc.pdfmaster.mlkit.vision.common
 
 import android.content.Context
 import android.graphics.Bitmap

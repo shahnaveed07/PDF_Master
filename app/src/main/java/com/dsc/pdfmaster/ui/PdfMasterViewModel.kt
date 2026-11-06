@@ -82,7 +82,8 @@ data class CompressionResultState(
     val originalSizeBytes: Long = 0,
     val compressedSizeBytes: Long = 0,
     val outputFile: File? = null,
-    val isComplete: Boolean = false
+    val isComplete: Boolean = false,
+    val noReductionAchieved: Boolean = false
 )
 
 @HiltViewModel
@@ -365,6 +366,7 @@ class PdfMasterViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            repository.reconcileMissingFiles()
             val sample = repository.ensureStarterSamplePdf()
             if (_selectedPdfFile.value == null) {
                 _selectedPdfFile.value = sample
@@ -378,9 +380,10 @@ class PdfMasterViewModel @Inject constructor(
     }
 
     fun navigateTo(route: ScreenRoute) {
-        _isProcessing.value = false
         val previousRoute = _currentRoute.value
         if (previousRoute == route) return
+
+        resetProcessingState()
 
         if (route == ScreenRoute.CONVERT_PDF) {
             resetConversionSession()
@@ -418,7 +421,7 @@ class PdfMasterViewModel @Inject constructor(
     }
 
     fun navigateBack(): Boolean {
-        _isProcessing.value = false
+        resetProcessingState()
         if (backStack.size > 1) {
             backStack.removeLast()
             _currentRoute.value = backStack.last()
@@ -759,22 +762,36 @@ class PdfMasterViewModel @Inject constructor(
             _operationError.value = null
             _processingMessage.value = "Compressing PDF with ${level.label} (${mode.label})..."
             try {
-                val originalSize = file.length()
-                val resultFile = repository.compressPdf(file, level, outputName, mode)
-                if (resultFile != null) {
-                    val compressedSize = resultFile.length()
-                    _compressionResult.value = CompressionResultState(
-                        originalSizeBytes = originalSize,
-                        compressedSizeBytes = compressedSize,
-                        outputFile = resultFile,
-                        isComplete = true
-                    )
-                    _selectedPdfFile.value = resultFile
-                    _userNotification.value = "Compressed successfully!"
-                } else {
-                    val err = PdfOperationError.CorruptedPdf("Compression failed.")
-                    _operationError.value = err
-                    _userNotification.value = err.userMessage
+                val result = repository.compressPdfDetailed(file, level, outputName, mode)
+                when (result) {
+                    is com.dsc.pdfmaster.pdfengine.PdfEngine.CompressResult.Success -> {
+                        _compressionResult.value = CompressionResultState(
+                            originalSizeBytes = result.originalSize,
+                            compressedSizeBytes = result.compressedSize,
+                            outputFile = result.file,
+                            isComplete = true,
+                            noReductionAchieved = false
+                        )
+                        _selectedPdfFile.value = result.file
+                        _userNotification.value = "Compressed successfully!"
+                    }
+                    is PdfEngine.CompressResult.NoReduction -> {
+                        _compressionResult.value = CompressionResultState(
+                            originalSizeBytes = result.originalSize,
+                            compressedSizeBytes = result.candidateSize,
+                            outputFile = null,
+                            isComplete = true,
+                            noReductionAchieved = true
+                        )
+                        val message = "This PDF is already highly optimized. Compression would not reduce its file size."
+                        _operationError.value = PdfOperationError.Unknown(message)
+                        _userNotification.value = message
+                    }
+                    is com.dsc.pdfmaster.pdfengine.PdfEngine.CompressResult.Error -> {
+                        val err = PdfOperationError.CorruptedPdf(result.message)
+                        _operationError.value = err
+                        _userNotification.value = err.userMessage
+                    }
                 }
             } catch (e: CancellationException) {
                 _operationError.value = PdfOperationError.Cancelled("Compression cancelled")

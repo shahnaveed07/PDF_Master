@@ -28,11 +28,11 @@ import com.dsc.pdfmaster.data.model.WatermarkConfig
 import com.dsc.pdfmaster.data.model.WatermarkPosition
 import com.dsc.pdfmaster.di.AppModule
 import com.dsc.pdfmaster.pdfengine.PdfAdvancedToolsEngine
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.dsc.pdfmaster.mlkit.vision.common.InputImage
+import com.dsc.pdfmaster.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.dsc.pdfmaster.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.dsc.pdfmaster.mlkit.vision.text.TextRecognition
+import com.dsc.pdfmaster.mlkit.vision.text.latin.TextRecognizerOptions
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -67,7 +67,7 @@ class Phase3NewFeaturesTest {
         AppModule.initialize(application)
     }
 
-    private fun createSamplePdf(fileName: String, pages: List<String>): File {
+    private fun createSamplePdf(fileName: String, pages: List<String>, withImage: Boolean = false): File {
         val file = File(application.cacheDir, fileName)
         PDDocument().use { doc ->
             pages.forEach { pageText ->
@@ -79,6 +79,19 @@ class Phase3NewFeaturesTest {
                     cs.newLineAtOffset(50f, 750f)
                     cs.showText(pageText)
                     cs.endText()
+                    if (withImage) {
+                        val bmp = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bmp)
+                        canvas.drawColor(android.graphics.Color.DKGRAY)
+                        for (y in 0 until 300 step 4) {
+                            for (x in 0 until 300 step 4) {
+                                bmp.setPixel(x, y, android.graphics.Color.rgb((x * 37) % 255, (y * 53) % 255, ((x + y) * 19) % 255))
+                            }
+                        }
+                        val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bmp)
+                        bmp.recycle()
+                        cs.drawImage(pdImage, 50f, 200f, 200f, 200f)
+                    }
                 }
             }
             doc.save(file)
@@ -483,8 +496,8 @@ class Phase3NewFeaturesTest {
 
     @Test
     fun feature8_batchSupport_compressesAndConvertsMultipleFilesWithCombinedProgress(): Unit = runBlocking {
-        val pdf1 = createSamplePdf("batch_doc_1.pdf", listOf("Batch Document One Alpha"))
-        val pdf2 = createSamplePdf("batch_doc_2.pdf", listOf("Batch Document Two Beta"))
+        val pdf1 = createSamplePdf("batch_doc_1.pdf", listOf("Batch Document One Alpha"), withImage = true)
+        val pdf2 = createSamplePdf("batch_doc_2.pdf", listOf("Batch Document Two Beta"), withImage = true)
 
         val compressProgressSnapshots = mutableListOf<Int>()
         val compressState = PdfAdvancedToolsEngine.batchCompressPdfs(

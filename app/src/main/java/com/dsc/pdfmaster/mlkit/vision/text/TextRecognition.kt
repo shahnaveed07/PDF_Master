@@ -1,10 +1,10 @@
-package com.google.mlkit.vision.text
+package com.dsc.pdfmaster.mlkit.vision.text
 
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.dsc.pdfmaster.mlkit.vision.common.InputImage
+import com.dsc.pdfmaster.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.Closeable
 import java.util.WeakHashMap
 

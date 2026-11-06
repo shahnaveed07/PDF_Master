@@ -49,6 +49,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dsc.pdfmaster.pdfengine.PageRangeParser
+import com.dsc.pdfmaster.pdfengine.PageRangeResult
 import com.dsc.pdfmaster.pdfengine.PdfEngine
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.theme.Dimens
@@ -66,10 +68,21 @@ fun SplitPdfScreen(
     val context = LocalContext.current
     val windowInfo = rememberWindowInfo()
     val currentPdf by viewModel.selectedPdfFile.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
 
     var totalPages by remember { mutableIntStateOf(1) }
     var pageRangeInput by remember { mutableStateOf("1") }
     var outputNameInput by remember { mutableStateOf("Split_${System.currentTimeMillis() / 1000}.pdf") }
+
+    val parsedRange = remember(pageRangeInput, totalPages, currentPdf) {
+        if (currentPdf == null) {
+            PageRangeResult.Error("No PDF selected")
+        } else {
+            PageRangeParser.parse(pageRangeInput, totalPages)
+        }
+    }
+    val rangeError = (parsedRange as? PageRangeResult.Error)?.message
+    val isRangeValid = parsedRange is PageRangeResult.Success
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -181,6 +194,12 @@ fun SplitPdfScreen(
                                 onValueChange = { pageRangeInput = it },
                                 label = { Text("Page Range (e.g. 1-3, 5, 7-10)") },
                                 singleLine = true,
+                                isError = rangeError != null && pageRangeInput.isNotBlank(),
+                                supportingText = {
+                                    if (rangeError != null && pageRangeInput.isNotBlank()) {
+                                        Text(text = rangeError, color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("page_range_input_field")
@@ -201,12 +220,13 @@ fun SplitPdfScreen(
 
                         Button(
                             onClick = {
-                                val indices = parsePageRange(pageRangeInput, totalPages)
-                                if (currentPdf != null) {
+                                val successPages = (parsedRange as? PageRangeResult.Success)?.pageNumbers
+                                if (currentPdf != null && !successPages.isNullOrEmpty()) {
+                                    val indices = successPages.map { it - 1 }
                                     viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
                                 }
                             },
-                            enabled = currentPdf != null,
+                            enabled = currentPdf != null && isRangeValid && !isProcessing,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(Dimens.ButtonHeight)
@@ -283,6 +303,12 @@ fun SplitPdfScreen(
                         onValueChange = { pageRangeInput = it },
                         label = { Text("Page Range (e.g. 1-3, 5, 7-10)") },
                         singleLine = true,
+                        isError = rangeError != null && pageRangeInput.isNotBlank(),
+                        supportingText = {
+                            if (rangeError != null && pageRangeInput.isNotBlank()) {
+                                Text(text = rangeError, color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("page_range_input_field")
@@ -304,12 +330,13 @@ fun SplitPdfScreen(
 
                     Button(
                         onClick = {
-                            val indices = parsePageRange(pageRangeInput, totalPages)
-                            if (currentPdf != null) {
+                            val successPages = (parsedRange as? PageRangeResult.Success)?.pageNumbers
+                            if (currentPdf != null && !successPages.isNullOrEmpty()) {
+                                val indices = successPages.map { it - 1 }
                                 viewModel.executeSplitPdf(currentPdf!!, indices, outputNameInput.trim())
                             }
                         },
-                        enabled = currentPdf != null,
+                        enabled = currentPdf != null && isRangeValid && !isProcessing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(Dimens.ButtonHeight)
@@ -324,32 +351,4 @@ fun SplitPdfScreen(
             }
         }
     }
-}
-
-private fun parsePageRange(rangeStr: String, maxPages: Int): List<Int> {
-    val result = mutableSetOf<Int>()
-    try {
-        val parts = rangeStr.split(",")
-        for (part in parts) {
-            val trimmed = part.trim()
-            if (trimmed.contains("-")) {
-                val bounds = trimmed.split("-")
-                val start = bounds[0].toIntOrNull() ?: 1
-                val end = bounds[1].toIntOrNull() ?: maxPages
-                for (p in start..end) {
-                    if (p in 1..maxPages) {
-                        result.add(p - 1)
-                    }
-                }
-            } else {
-                val p = trimmed.toIntOrNull()
-                if (p != null && p in 1..maxPages) {
-                    result.add(p - 1)
-                }
-            }
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return result.sorted()
 }

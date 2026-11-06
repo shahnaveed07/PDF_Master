@@ -23,8 +23,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -429,6 +431,44 @@ private fun BatchProgressCard(progress: BatchProgressState) {
 
 @Composable
 private fun CompressionResultCard(result: CompressionResultState) {
+    if (result.noReductionAchieved) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("compression_no_reduction_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(Dimens.CornerMedium)
+        ) {
+            Column(
+                modifier = Modifier.padding(Dimens.Spacing16),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+                Spacer(modifier = Modifier.height(Dimens.Spacing8))
+                Text(
+                    text = "Already Optimized",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(Dimens.Spacing4))
+                Text(
+                    text = "This document is already optimal (${PdfEngine.formatFileSize(result.originalSizeBytes)}). Compression would not reduce its file size further without losing document content.",
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("compression_already_optimal_text")
+                )
+            }
+        }
+        return
+    }
+
     val savedBytes = (result.originalSizeBytes - result.compressedSizeBytes).coerceAtLeast(0L)
     val savedPercent = if (result.originalSizeBytes > 0) {
         ((savedBytes.toDouble() / result.originalSizeBytes) * 100).toInt().coerceIn(0, 99)

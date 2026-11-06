@@ -29,6 +29,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -254,13 +256,66 @@ class PdfRepository @Inject constructor(
         dao.getLastReadPage(filePath) ?: PdfAdvancedToolsEngine.getLastReadPage(context, filePath)
     }
 
+    fun sanitizeFileName(name: String): String? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.contains('\u0000') || trimmed.contains("..")) return null
+        val cleaned = trimmed.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim()
+        if (cleaned.isEmpty() || cleaned.all { it == '.' || it == '_' || it == ' ' }) return null
+        return if (cleaned.endsWith(".pdf", ignoreCase = true)) {
+            val base = cleaned.substring(0, cleaned.length - 4).trimEnd('.', ' ', '_')
+            if (base.isEmpty()) null else "$base.pdf"
+        } else {
+            val base = cleaned.trimEnd('.', ' ', '_')
+            if (base.isEmpty()) null else "$base.pdf"
+        }
+    }
+
     suspend fun renamePdf(file: File, newName: String): File? = withContext(Dispatchers.IO) {
         try {
-            val sanitizedName = if (newName.endsWith(".pdf", ignoreCase = true)) newName else "$newName.pdf"
-            val newFile = File(file.parentFile, sanitizedName)
-            if (file.renameTo(newFile)) {
-                dao.deletePdfByPath(file.absolutePath)
-                registerPdfFile(newFile)
+            if (!file.exists() || !file.isFile) return@withContext null
+            val sanitizedName = sanitizeFileName(newName) ?: return@withContext null
+            val parent = file.parentFile ?: return@withContext null
+            val newFile = File(parent, sanitizedName)
+
+            if (newFile.canonicalPath == file.canonicalPath) {
+                return@withContext file
+            }
+            if (newFile.parentFile?.canonicalPath != parent.canonicalPath) {
+                return@withContext null
+            }
+
+            if (newFile.exists()) {
+                return@withContext null
+            }
+
+            val oldPath = file.absolutePath
+            val success = try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    Files.move(file.toPath(), newFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                    true
+                } else {
+                    file.renameTo(newFile)
+                }
+            } catch (_: Exception) {
+                file.renameTo(newFile)
+            }
+
+            if (success && newFile.exists()) {
+                val existingEntity = dao.getPdfByPath(oldPath)
+                if (existingEntity != null) {
+                    dao.insertPdf(
+                        existingEntity.copy(
+                            filePath = newFile.absolutePath,
+                            fileName = newFile.name,
+                            fileSizeBytes = newFile.length(),
+                            lastAccessedTimestamp = System.currentTimeMillis()
+                        )
+                    )
+                    dao.deletePdfByPath(oldPath)
+                } else {
+                    registerPdfFile(newFile)
+                }
                 newFile
             } else {
                 null
@@ -268,6 +323,22 @@ class PdfRepository @Inject constructor(
         } catch (e: Exception) {
             null
         }
+    }
+
+    suspend fun reconcileMissingFiles(): Int = withContext(Dispatchers.IO) {
+        var prunedCount = 0
+        try {
+            val entities = dao.getAllRecentPdfsSnapshot()
+            for (entity in entities) {
+                val file = File(entity.filePath)
+                if (!file.exists()) {
+                    dao.deletePdfByPath(entity.filePath)
+                    prunedCount++
+                }
+            }
+        } catch (_: Exception) {
+        }
+        prunedCount
     }
 
     suspend fun deletePdf(filePath: String) = withContext(Dispatchers.IO) {
@@ -332,6 +403,25 @@ class PdfRepository @Inject constructor(
             registerPdfFile(outputFile)
         }
         outputFile
+    }
+
+    suspend fun compressPdfDetailed(
+        pdfFile: File,
+        level: PdfCompressionLevel,
+        outputName: String,
+        mode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION
+    ): PdfEngine.CompressResult = withContext(Dispatchers.IO) {
+        val result = PdfEngine.compressPdfDetailed(
+            context = context,
+            pdfFile = pdfFile,
+            level = level,
+            outputFileName = outputName,
+            mode = mode
+        )
+        if (result is PdfEngine.CompressResult.Success) {
+            registerPdfFile(result.file)
+        }
+        result
     }
 
     suspend fun convertImagesToPdf(imageUris: List<Uri>, outputName: String): File? = withContext(Dispatchers.IO) {

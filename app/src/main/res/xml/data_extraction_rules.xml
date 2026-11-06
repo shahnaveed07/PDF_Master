@@ -6,6 +6,7 @@
         <exclude domain="file" path="output_images" />
         <exclude domain="file" path="output_texts" />
         <exclude domain="file" path="managed_pdfs" />
+        <exclude domain="database" path="pdf_master_database" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="imported_pdfs" />
@@ -13,5 +14,6 @@
         <exclude domain="file" path="output_images" />
         <exclude domain="file" path="output_texts" />
         <exclude domain="file" path="managed_pdfs" />
+        <exclude domain="database" path="pdf_master_database" />
     </device-transfer>
 </data-extraction-rules>

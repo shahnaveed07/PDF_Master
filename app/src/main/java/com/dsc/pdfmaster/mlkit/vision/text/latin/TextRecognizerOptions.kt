@@ -1,4 +1,4 @@
-package com.google.mlkit.vision.text.latin
+package com.dsc.pdfmaster.mlkit.vision.text.latin
 
 /**
  * Options for the bundled Latin on-device ML Kit TextRecognizer.

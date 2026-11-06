@@ -114,8 +114,10 @@ object OfficeToPdfConverter {
         0x50.toByte(), 0x4B.toByte(), 0x03.toByte(), 0x04.toByte()
     )
 
-    private const val MAX_ARCHIVE_BYTES = 30 * 1024 * 1024 // 30 MB safety limit
-    private const val MAX_ENTRY_BYTES = 15 * 1024 * 1024 // 15 MB per entry safety limit
+    const val MAX_ARCHIVE_BYTES = 30 * 1024 * 1024 // 30 MB raw archive limit
+    const val MAX_ENTRY_BYTES = 15 * 1024 * 1024 // 15 MB per entry limit
+    const val MAX_TOTAL_DECOMPRESSED_BYTES = 60 * 1024 * 1024L // 60 MB cumulative decompressed bytes limit
+    const val MAX_ZIP_ENTRY_COUNT = 2000 // Maximum number of entries inside zip
 
     private fun openUriInputStream(context: Context, uri: Uri): InputStream? {
         return when (uri.scheme) {
@@ -171,10 +173,30 @@ object OfficeToPdfConverter {
     private fun readZipEntries(bytes: ByteArray): Map<String, ByteArray>? {
         if (!startsWithSignature(bytes, ZIP_MAGIC)) return null
         val entries = LinkedHashMap<String, ByteArray>()
+        var totalDecompressedBytes = 0L
         return try {
             ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
+                var entryCount = 0
                 while (true) {
                     val entry = zis.nextEntry ?: break
+                    entryCount++
+                    if (entryCount > MAX_ZIP_ENTRY_COUNT) {
+                        return null // Rejects zip bomb with excessive entry count
+                    }
+
+                    val rawName = entry.name
+                    // Path traversal protection: block relative path escalation and absolute path markers
+                    if (rawName.contains("..") || rawName.startsWith("/") || rawName.startsWith("\\")) {
+                        return null
+                    }
+                    val normalizedName = rawName.trimStart('/', '\\').replace('\\', '/')
+                    if (normalizedName.contains("/../") || normalizedName.endsWith("/..") || normalizedName == "..") {
+                        return null
+                    }
+                    if (entries.containsKey(normalizedName)) {
+                        return null // Duplicate normalized path collision
+                    }
+
                     if (!entry.isDirectory) {
                         val baos = ByteArrayOutputStream()
                         val buf = ByteArray(8192)
@@ -183,10 +205,14 @@ object OfficeToPdfConverter {
                             val r = zis.read(buf)
                             if (r == -1) break
                             entryTotal += r
-                            if (entryTotal > MAX_ENTRY_BYTES) break
+                            totalDecompressedBytes += r
+
+                            // Detect truncated entries and reject archive rather than storing partial corrupted data
+                            if (entryTotal > MAX_ENTRY_BYTES || totalDecompressedBytes > MAX_TOTAL_DECOMPRESSED_BYTES) {
+                                return null // Entry too large or cumulative decompressed size exceeded
+                            }
                             baos.write(buf, 0, r)
                         }
-                        val normalizedName = entry.name.trimStart('/').replace('\\', '/')
                         entries[normalizedName] = baos.toByteArray()
                     }
                     zis.closeEntry()
@@ -638,7 +664,27 @@ object OfficeToPdfConverter {
         imageBytes: ByteArray
     ): Pair<com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject, Pair<Int, Int>>? {
         return try {
-            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            val sampleSize = PdfEngine.calculateSafeImageSampleSize(
+                bounds.outWidth,
+                bounds.outHeight,
+                maxDimension = 2048,
+                maxPixelBudget = 16_000_000L
+            )
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+
+            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, decodeOptions) ?: return null
+            if (!PdfEngine.isSafeBitmapAllocation(bitmap.width, bitmap.height)) {
+                bitmap.recycle()
+                return null
+            }
+
             val width = bitmap.width.coerceAtLeast(1)
             val height = bitmap.height.coerceAtLeast(1)
             val flattened = if (bitmap.hasAlpha()) {
@@ -677,6 +723,10 @@ object OfficeToPdfConverter {
     private fun newXmlPullParser(xmlBytes: ByteArray): XmlPullParser {
         val factory = XmlPullParserFactory.newInstance().apply {
             isNamespaceAware = false
+            try {
+                setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+            } catch (_: Throwable) {
+            }
         }
         return factory.newPullParser().apply {
             setInput(ByteArrayInputStream(xmlBytes), "UTF-8")

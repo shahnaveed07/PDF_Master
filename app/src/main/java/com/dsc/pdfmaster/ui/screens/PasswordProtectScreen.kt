@@ -151,9 +151,10 @@ fun PasswordProtectScreen(
     val requiresOwnerPassword = !allowPrinting || !allowCopy || useSeparateOwnerPassword
     val passwordsMatch = password.isNotBlank() && password == confirmPassword
     val showMismatchMessage = confirmPassword.isNotEmpty() && password != confirmPassword
+    val ownerPasswordSameAsUser = requiresOwnerPassword && ownerPassword.isNotBlank() && ownerPassword == password
     val isFormValid = selectedFile != null &&
         passwordsMatch &&
-        (!requiresOwnerPassword || ownerPassword.isNotBlank()) &&
+        (!requiresOwnerPassword || (ownerPassword.isNotBlank() && !ownerPasswordSameAsUser)) &&
         (!requiresCurrentPassword || currentPdfPassword.isNotBlank()) &&
         !isProcessing
 
@@ -325,6 +326,65 @@ fun PasswordProtectScreen(
 
                             Spacer(modifier = Modifier.height(Dimens.Spacing12))
 
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                shape = RoundedCornerShape(Dimens.CornerSmall)
+                            ) {
+                                Column(modifier = Modifier.padding(Dimens.Spacing12)) {
+                                    Text(
+                                        text = "PERMISSIONS & RESTRICTIONS",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = allowPrinting,
+                                            onCheckedChange = { allowPrinting = it },
+                                            modifier = Modifier.testTag("allow_printing_checkbox")
+                                        )
+                                        Text("Allow Printing", fontSize = 13.sp)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = allowCopy,
+                                            onCheckedChange = { allowCopy = it },
+                                            modifier = Modifier.testTag("allow_copy_checkbox")
+                                        )
+                                        Text("Allow Content Copying", fontSize = 13.sp)
+                                    }
+                                }
+                            }
+
+                            if (requiresOwnerPassword) {
+                                Spacer(modifier = Modifier.height(Dimens.Spacing12))
+                                OutlinedTextField(
+                                    value = ownerPassword,
+                                    onValueChange = { ownerPassword = it },
+                                    label = { Text("Owner Password (Required for restrictions)") },
+                                    singleLine = true,
+                                    isError = ownerPasswordSameAsUser,
+                                    supportingText = {
+                                        if (ownerPasswordSameAsUser) {
+                                            Text("Owner password must be different from User password", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    },
+                                    visualTransformation = if (ownerPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { ownerPasswordVisible = !ownerPasswordVisible }) {
+                                            Icon(
+                                                imageVector = if (ownerPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = "Toggle password visibility"
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().testTag("owner_password_field")
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
                             OutlinedTextField(
                                 value = outputName,
                                 onValueChange = { outputName = it },
@@ -342,7 +402,7 @@ fun PasswordProtectScreen(
                                 viewModel.executeProtectPdf(
                                     file = file,
                                     password = password,
-                                    ownerPassword = if (requiresOwnerPassword) ownerPassword else password,
+                                    ownerPassword = if (requiresOwnerPassword) ownerPassword else null,
                                     currentPassword = currentPdfPassword,
                                     keyLengthBits = selectedKeyLengthBits,
                                     allowPrinting = allowPrinting,
@@ -447,6 +507,65 @@ fun PasswordProtectScreen(
 
                     Spacer(modifier = Modifier.height(Dimens.Spacing12))
 
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(Dimens.CornerSmall)
+                    ) {
+                        Column(modifier = Modifier.padding(Dimens.Spacing12)) {
+                            Text(
+                                text = "PERMISSIONS & RESTRICTIONS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = allowPrinting,
+                                    onCheckedChange = { allowPrinting = it },
+                                    modifier = Modifier.testTag("allow_printing_checkbox_stacked")
+                                )
+                                Text("Allow Printing", fontSize = 13.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = allowCopy,
+                                    onCheckedChange = { allowCopy = it },
+                                    modifier = Modifier.testTag("allow_copy_checkbox_stacked")
+                                )
+                                Text("Allow Content Copying", fontSize = 13.sp)
+                            }
+                        }
+                    }
+
+                    if (requiresOwnerPassword) {
+                        Spacer(modifier = Modifier.height(Dimens.Spacing12))
+                        OutlinedTextField(
+                            value = ownerPassword,
+                            onValueChange = { ownerPassword = it },
+                            label = { Text("Owner Password (Required for restrictions)") },
+                            singleLine = true,
+                            isError = ownerPasswordSameAsUser,
+                            supportingText = {
+                                if (ownerPasswordSameAsUser) {
+                                    Text("Owner password must be different from User password", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            visualTransformation = if (ownerPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { ownerPasswordVisible = !ownerPasswordVisible }) {
+                                    Icon(
+                                        imageVector = if (ownerPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "Toggle password visibility"
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("owner_password_field_stacked")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(Dimens.Spacing12))
+
                     OutlinedTextField(
                         value = outputName,
                         onValueChange = { outputName = it },
@@ -463,7 +582,7 @@ fun PasswordProtectScreen(
                             viewModel.executeProtectPdf(
                                 file = file,
                                 password = password,
-                                ownerPassword = if (requiresOwnerPassword) ownerPassword else password,
+                                ownerPassword = if (requiresOwnerPassword) ownerPassword else null,
                                 currentPassword = currentPdfPassword,
                                 keyLengthBits = selectedKeyLengthBits,
                                 allowPrinting = allowPrinting,

@@ -58,9 +58,9 @@ import com.dsc.pdfmaster.data.model.ScannerFilterMode
 import com.dsc.pdfmaster.di.hiltViewModel
 import com.dsc.pdfmaster.ui.PdfMasterViewModel
 import com.dsc.pdfmaster.ui.viewmodel.DocumentScannerViewModel
-import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import com.dsc.pdfmaster.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.dsc.pdfmaster.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.dsc.pdfmaster.mlkit.vision.documentscanner.GmsDocumentScanningResult
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable

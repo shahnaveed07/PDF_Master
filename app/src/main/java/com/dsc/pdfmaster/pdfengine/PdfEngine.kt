@@ -20,6 +20,9 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.encryption.PDEncryption
@@ -54,6 +57,23 @@ object PdfEngine {
             val message: String,
             val isPasswordProtected: Boolean = false
         ) : ExtractResult()
+    }
+
+    sealed class CompressResult {
+        data class Success(
+            val file: File,
+            val originalSize: Long,
+            val compressedSize: Long
+        ) : CompressResult()
+
+        data class NoReduction(
+            val originalSize: Long,
+            val candidateSize: Long
+        ) : CompressResult()
+
+        data class Error(
+            val message: String
+        ) : CompressResult()
     }
 
     enum class ProtectError {
@@ -732,6 +752,53 @@ object PdfEngine {
         }
     }
 
+    const val MAX_IMAGE_DECODE_DIMENSION_PDF = 2048
+    const val MAX_IMAGE_DECODE_DIMENSION_CONVERT = 4096
+    const val MAX_IMAGE_DECODE_PIXEL_BUDGET: Long = 16_000_000L // 16 megapixels (~64MB in ARGB_8888)
+
+    /**
+     * Calculates a safe BitmapFactory.Options inSampleSize that downsamples both width and height
+     * independently so that NEITHER dimension exceeds [maxDimension] and total decoded pixels do not
+     * exceed [maxPixelBudget]. Also guards against integer overflow and extreme aspect ratios.
+     */
+    fun calculateSafeImageSampleSize(
+        outWidth: Int,
+        outHeight: Int,
+        maxDimension: Int = MAX_IMAGE_DECODE_DIMENSION_PDF,
+        maxPixelBudget: Long = MAX_IMAGE_DECODE_PIXEL_BUDGET
+    ): Int {
+        if (outWidth <= 0 || outHeight <= 0) return 1
+        var sampleSize = 1
+
+        // Downsample if EITHER width or height exceeds maxDimension
+        while ((outWidth / sampleSize) > maxDimension || (outHeight / sampleSize) > maxDimension) {
+            sampleSize *= 2
+            if (sampleSize >= 128) break
+        }
+
+        // Downsample further if total decoded pixel budget is exceeded
+        while (sampleSize < 128) {
+            val decodedW = (outWidth / sampleSize).toLong()
+            val decodedH = (outHeight / sampleSize).toLong()
+            if (decodedW * decodedH <= maxPixelBudget) break
+            sampleSize *= 2
+        }
+
+        return sampleSize.coerceAtLeast(1)
+    }
+
+    /**
+     * Validates whether a bitmap allocation of [width] x [height] with 4 bytes per pixel
+     * is safe from integer overflow and within reasonable single-allocation memory limits.
+     */
+    fun isSafeBitmapAllocation(width: Int, height: Int, maxBytes: Long = 64L * 1024 * 1024): Boolean {
+        if (width <= 0 || height <= 0) return false
+        val totalPixels = width.toLong() * height.toLong()
+        if (totalPixels > (Int.MAX_VALUE / 4)) return false
+        val totalBytes = totalPixels * 4L
+        return totalBytes <= maxBytes
+    }
+
     // Convert List of Images to PDF using PDFBox for universal standards-compliant PDF output
     suspend fun convertImagesToPdf(
         context: Context,
@@ -766,46 +833,50 @@ object PdfEngine {
                     return@withContext null
                 }
 
-                val maxDimension = 2048
-                var sampleSize = 1
-                if (options.outWidth > maxDimension || options.outHeight > maxDimension) {
-                    val halfWidth = options.outWidth / 2
-                    val halfHeight = options.outHeight / 2
-                    while (halfWidth / sampleSize >= maxDimension && halfHeight / sampleSize >= maxDimension) {
-                        sampleSize *= 2
-                    }
-                }
+                val sampleSize = calculateSafeImageSampleSize(
+                    options.outWidth,
+                    options.outHeight,
+                    maxDimension = MAX_IMAGE_DECODE_DIMENSION_PDF,
+                    maxPixelBudget = MAX_IMAGE_DECODE_PIXEL_BUDGET
+                )
 
                 val decodeOptions = BitmapFactory.Options().apply {
                     inSampleSize = sampleSize
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                 }
-                val rawBitmap = openUriInputStream(context, uri)?.use { inputStream ->
-                    BitmapFactory.decodeStream(inputStream, null, decodeOptions)
-                } ?: run {
-                    tempFile.delete()
-                    return@withContext null
-                }
-
-                val rotation = readExifRotationDegrees(context, uri)
-                val orientedBitmap = applyRotationIfNeeded(rawBitmap, rotation)
-
-                val flattenedBitmap = if (orientedBitmap.hasAlpha()) {
-                    val flat = Bitmap.createBitmap(
-                        orientedBitmap.width.coerceAtLeast(1),
-                        orientedBitmap.height.coerceAtLeast(1),
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val canvas = Canvas(flat)
-                    canvas.drawColor(Color.WHITE)
-                    canvas.drawBitmap(orientedBitmap, 0f, 0f, null)
-                    orientedBitmap.recycle()
-                    flat
-                } else {
-                    orientedBitmap
-                }
-
+                var rawBitmap: Bitmap? = null
+                var orientedBitmap: Bitmap? = null
+                var flattenedBitmap: Bitmap? = null
                 try {
+                    rawBitmap = openUriInputStream(context, uri)?.use { inputStream ->
+                        BitmapFactory.decodeStream(inputStream, null, decodeOptions)
+                    } ?: run {
+                        tempFile.delete()
+                        return@withContext null
+                    }
+
+                    if (!isSafeBitmapAllocation(rawBitmap.width, rawBitmap.height)) {
+                        tempFile.delete()
+                        return@withContext null
+                    }
+
+                    val rotation = readExifRotationDegrees(context, uri)
+                    orientedBitmap = applyRotationIfNeeded(rawBitmap, rotation)
+
+                    flattenedBitmap = if (orientedBitmap.hasAlpha()) {
+                        val flat = Bitmap.createBitmap(
+                            orientedBitmap.width.coerceAtLeast(1),
+                            orientedBitmap.height.coerceAtLeast(1),
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(flat)
+                        canvas.drawColor(Color.WHITE)
+                        canvas.drawBitmap(orientedBitmap, 0f, 0f, null)
+                        flat
+                    } else {
+                        orientedBitmap
+                    }
+
                     val page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
                     doc.addPage(page)
 
@@ -842,8 +913,19 @@ object PdfEngine {
                         contentStream.drawImage(pdImage, left, bottom, destWidth, destHeight)
                     }
                     addedPages++
+                } catch (oom: OutOfMemoryError) {
+                    tempFile.delete()
+                    return@withContext null
                 } finally {
-                    flattenedBitmap.recycle()
+                    if (flattenedBitmap != null && flattenedBitmap != orientedBitmap && flattenedBitmap != rawBitmap && !flattenedBitmap.isRecycled) {
+                        flattenedBitmap.recycle()
+                    }
+                    if (orientedBitmap != null && orientedBitmap != rawBitmap && !orientedBitmap.isRecycled) {
+                        orientedBitmap.recycle()
+                    }
+                    if (rawBitmap != null && !rawBitmap.isRecycled) {
+                        rawBitmap.recycle()
+                    }
                 }
             }
 
@@ -885,7 +967,11 @@ object PdfEngine {
         }
     }
 
-    // Convert Raw Text to Multi-page PDF Document using PDFBox
+    /**
+     * Converts raw text (supporting full multilingual Unicode: English, Hindi/Devanagari, Urdu/Arabic,
+     * accents, and symbols) to a multi-page PDF document. Uses Android's native text shaping and layout
+     * engine (HarfBuzz/Minikin) so that complex scripts, ligatures, and bidirectional text are properly shaped.
+     */
     suspend fun createTextPdf(
         context: Context,
         textContent: String,
@@ -896,93 +982,51 @@ object PdfEngine {
         if (textContent.isBlank()) return@withContext null
         var tempFile: File? = null
         var outputFile: File? = null
-        var doc: PDDocument? = null
+
         try {
             PDFBoxResourceLoader.init(context)
-            doc = PDDocument()
-            val font = com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA
-            val fontSize = fontSizeSp
-            val leading = 1.5f * fontSize
-
-            val margin = marginDp.toFloat()
-            val width = com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4.width
-            val height = com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4.height
-            val usableWidth = width - 2 * margin
-
-            val lines = mutableListOf<String>()
-            for (rawPara in textContent.replace("\r\n", "\n").replace("\r", "\n").split("\n")) {
-                val para = rawPara.replace("\t", "    ")
-                if (para.isBlank()) {
-                    lines.add("")
-                    continue
-                }
-                var currentLine = ""
-                for (word in para.split(" ")) {
-                    val safeWord = word.filter { it.code in 32..126 }
-                    val testLine = if (currentLine.isEmpty()) safeWord else "$currentLine $safeWord"
-                    val textWidth = try {
-                        font.getStringWidth(testLine) / 1000f * fontSize
-                    } catch (e: Exception) {
-                        testLine.length * fontSize * 0.6f
-                    }
-                    if (textWidth <= usableWidth) {
-                        currentLine = testLine
-                    } else {
-                        if (currentLine.isNotEmpty()) {
-                            lines.add(currentLine)
-                        }
-                        currentLine = safeWord
-                    }
-                }
-                if (currentLine.isNotEmpty()) {
-                    lines.add(currentLine)
-                }
-            }
-
-            var page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
-            doc.addPage(page)
-            var contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page)
-            contentStream.beginText()
-            contentStream.setFont(font, fontSize)
-            contentStream.newLineAtOffset(margin, height - margin - fontSize)
-
-            var currentHeight = margin + fontSize
-
-            for (line in lines) {
-                coroutineContext.ensureActive()
-                if (currentHeight + leading > height - margin) {
-                    contentStream.endText()
-                    contentStream.close()
-
-                    page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
-                    doc.addPage(page)
-                    contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page)
-                    contentStream.beginText()
-                    contentStream.setFont(font, fontSize)
-                    contentStream.newLineAtOffset(margin, height - margin - fontSize)
-                    currentHeight = margin + fontSize
-                }
-
-                val safeLine = line.filter { it.code in 32..126 }
-                try {
-                    contentStream.showText(safeLine)
-                } catch (_: Exception) {
-                }
-                contentStream.newLineAtOffset(0f, -leading)
-                currentHeight += leading
-            }
-
-            contentStream.endText()
-            contentStream.close()
-
             tempFile = File(context.cacheDir, "temp_txt2pdf_${System.nanoTime()}.pdf")
-            doc.save(tempFile)
-            doc.close()
-            doc = null
 
-            if (!validateGeneratedPdfFile(context, tempFile, expectedMinPages = 1)) {
+            val isPureAscii = textContent.all { it.code in 32..126 || it == '\n' || it == '\r' || it == '\t' }
+            var generatedValid = false
+
+            if (isPureAscii) {
+                // For standard Latin/ASCII text, use direct PDFBox vector font stream so text is 100% extractable
+                val asciiSuccess = createTextPdfAsciiPdfBox(
+                    textContent = textContent,
+                    fontSizeSp = fontSizeSp,
+                    marginDp = marginDp,
+                    targetFile = tempFile
+                )
+                generatedValid = asciiSuccess && validateGeneratedPdfFile(context, tempFile, expectedMinPages = 1)
+            }
+
+            if (!generatedValid) {
+                // Primary Multilingual: High-fidelity native Android vector PDF document with full HarfBuzz shaping
                 tempFile.delete()
-                return@withContext null
+                val nativeSuccess = createTextPdfNativeLayout(
+                    textContent = textContent,
+                    fontSizeSp = fontSizeSp,
+                    marginDp = marginDp,
+                    targetFile = tempFile
+                )
+                generatedValid = nativeSuccess && validateGeneratedPdfFile(context, tempFile, expectedMinPages = 1)
+            }
+
+            if (!generatedValid) {
+                // Secondary Fallback: Render multilingual text pages using StaticLayout onto bitmap pages into PDFBox
+                tempFile.delete()
+                val fallbackSuccess = createTextPdfFallbackLayout(
+                    context = context,
+                    textContent = textContent,
+                    fontSizeSp = fontSizeSp,
+                    marginDp = marginDp,
+                    targetFile = tempFile
+                )
+                if (!fallbackSuccess || !validateGeneratedPdfFile(context, tempFile, expectedMinPages = 1)) {
+                    tempFile.delete()
+                    return@withContext null
+                }
             }
 
             val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
@@ -1004,11 +1048,295 @@ object PdfEngine {
             outputFile?.delete()
             null
         } finally {
+            tempFile?.delete()
+        }
+    }
+
+    private fun createTextPdfAsciiPdfBox(
+        textContent: String,
+        fontSizeSp: Float,
+        marginDp: Int,
+        targetFile: File
+    ): Boolean {
+        var doc: PDDocument? = null
+        return try {
+            doc = PDDocument()
+            val font = PDType1Font.HELVETICA
+            val fontSize = fontSizeSp.coerceIn(8f, 36f)
+            val margin = marginDp.toFloat().coerceIn(18f, 72f)
+            val pageWidth = PDRectangle.A4.width
+            val pageHeight = PDRectangle.A4.height
+            val usableWidth = pageWidth - (2f * margin)
+            val lineHeight = fontSize * 1.35f
+
+            val normalized = textContent.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ")
+            val lines = mutableListOf<String>()
+            for (rawLine in normalized.split('\n')) {
+                if (rawLine.isEmpty()) {
+                    lines.add("")
+                    continue
+                }
+                val words = rawLine.split(' ')
+                var currentLine = StringBuilder()
+                for (word in words) {
+                    val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
+                    val width = font.getStringWidth(candidate) / 1000f * fontSize
+                    if (width <= usableWidth) {
+                        currentLine = StringBuilder(candidate)
+                    } else {
+                        if (currentLine.isNotEmpty()) {
+                            lines.add(currentLine.toString())
+                            currentLine = StringBuilder()
+                        }
+                        var currentWordPart = StringBuilder()
+                        for (ch in word) {
+                            val partCandidate = currentWordPart.toString() + ch
+                            val partWidth = font.getStringWidth(partCandidate) / 1000f * fontSize
+                            if (partWidth <= usableWidth) {
+                                currentWordPart.append(ch)
+                            } else {
+                                if (currentWordPart.isNotEmpty()) {
+                                    lines.add(currentWordPart.toString())
+                                    currentWordPart = StringBuilder()
+                                }
+                                currentWordPart.append(ch)
+                            }
+                        }
+                        if (currentWordPart.isNotEmpty()) {
+                            currentLine = currentWordPart
+                        }
+                    }
+                }
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine.toString())
+                }
+            }
+
+            if (lines.isEmpty()) return false
+
+            val linesPerPage = ((pageHeight - (2f * margin)) / lineHeight).toInt().coerceAtLeast(1)
+            var lineIdx = 0
+
+            while (lineIdx < lines.size) {
+                val page = PDPage(PDRectangle.A4)
+                doc.addPage(page)
+                PDPageContentStream(doc, page).use { cs ->
+                    cs.beginText()
+                    cs.setFont(font, fontSize)
+                    cs.newLineAtOffset(margin, pageHeight - margin - fontSize)
+                    var pageLineCount = 0
+                    while (lineIdx < lines.size && pageLineCount < linesPerPage) {
+                        val line = lines[lineIdx]
+                        if (pageLineCount > 0) {
+                            cs.newLineAtOffset(0f, -lineHeight)
+                        }
+                        if (line.isNotEmpty()) {
+                            cs.showText(line)
+                        }
+                        lineIdx++
+                        pageLineCount++
+                    }
+                    cs.endText()
+                }
+            }
+
+            doc.save(targetFile)
+            doc.close()
+            doc = null
+            targetFile.exists() && targetFile.length() > 0
+        } catch (e: Exception) {
+            targetFile.delete()
+            false
+        } finally {
             try {
                 doc?.close()
             } catch (_: Exception) {
             }
-            tempFile?.delete()
+        }
+    }
+
+    private fun createTextPdfNativeLayout(
+        textContent: String,
+        fontSizeSp: Float,
+        marginDp: Int,
+        targetFile: File
+    ): Boolean {
+        var pdfDocument: android.graphics.pdf.PdfDocument? = null
+        return try {
+            val pageWidth = 595 // A4 standard width in points
+            val pageHeight = 842 // A4 standard height in points
+            val margin = marginDp.toFloat().coerceIn(18f, 72f)
+            val usableWidth = (pageWidth - (2f * margin)).toInt().coerceAtLeast(100)
+            val usableHeight = pageHeight - (2f * margin)
+
+            val textPaint = android.text.TextPaint().apply {
+                isAntiAlias = true
+                textSize = fontSizeSp
+                color = android.graphics.Color.BLACK
+            }
+
+            val normalized = textContent.replace("\r\n", "\n").replace("\r", "\n")
+            val layout = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.text.StaticLayout.Builder.obtain(normalized, 0, normalized.length, textPaint, usableWidth)
+                    .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+                    .setLineSpacing(0f, 1.3f)
+                    .setIncludePad(true)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                android.text.StaticLayout(
+                    normalized,
+                    textPaint,
+                    usableWidth,
+                    android.text.Layout.Alignment.ALIGN_NORMAL,
+                    1.3f,
+                    0f,
+                    true
+                )
+            }
+
+            if (layout.lineCount <= 0) return false
+
+            pdfDocument = android.graphics.pdf.PdfDocument()
+            var currentLine = 0
+            var pageIndex = 1
+
+            while (currentLine < layout.lineCount) {
+                val pageStartLine = currentLine
+                val pageTopOffset = layout.getLineTop(pageStartLine)
+                var pageEndLine = pageStartLine
+
+                while (pageEndLine < layout.lineCount) {
+                    val lineBottom = layout.getLineBottom(pageEndLine)
+                    if ((lineBottom - pageTopOffset) > usableHeight && pageEndLine > pageStartLine) {
+                        break
+                    }
+                    pageEndLine++
+                }
+
+                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageIndex++).create()
+                val page = pdfDocument.startPage(pageInfo)
+                val canvas = page.canvas
+
+                canvas.save()
+                canvas.translate(margin, margin - pageTopOffset)
+                canvas.clipRect(0f, pageTopOffset.toFloat(), usableWidth.toFloat(), layout.getLineBottom(pageEndLine - 1).toFloat())
+                layout.draw(canvas)
+                canvas.restore()
+
+                pdfDocument.finishPage(page)
+                currentLine = pageEndLine
+            }
+
+            FileOutputStream(targetFile).use { fos ->
+                pdfDocument.writeTo(fos)
+            }
+            targetFile.exists() && targetFile.length() > 0
+        } catch (e: Throwable) {
+            targetFile.delete()
+            false
+        } finally {
+            try {
+                pdfDocument?.close()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun createTextPdfFallbackLayout(
+        context: Context,
+        textContent: String,
+        fontSizeSp: Float,
+        marginDp: Int,
+        targetFile: File
+    ): Boolean {
+        var doc: PDDocument? = null
+        return try {
+            val pageWidth = 595
+            val pageHeight = 842
+            val margin = marginDp.toFloat().coerceIn(18f, 72f)
+            val usableWidth = (pageWidth - (2f * margin)).toInt().coerceAtLeast(100)
+            val usableHeight = pageHeight - (2f * margin)
+
+            val textPaint = android.text.TextPaint().apply {
+                isAntiAlias = true
+                textSize = fontSizeSp
+                color = android.graphics.Color.BLACK
+            }
+
+            val normalized = textContent.replace("\r\n", "\n").replace("\r", "\n")
+            val layout = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.text.StaticLayout.Builder.obtain(normalized, 0, normalized.length, textPaint, usableWidth)
+                    .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+                    .setLineSpacing(0f, 1.3f)
+                    .setIncludePad(true)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                android.text.StaticLayout(
+                    normalized,
+                    textPaint,
+                    usableWidth,
+                    android.text.Layout.Alignment.ALIGN_NORMAL,
+                    1.3f,
+                    0f,
+                    true
+                )
+            }
+
+            if (layout.lineCount <= 0) return false
+
+            doc = PDDocument()
+            var currentLine = 0
+
+            while (currentLine < layout.lineCount) {
+                val pageStartLine = currentLine
+                val pageTopOffset = layout.getLineTop(pageStartLine)
+                var pageEndLine = pageStartLine
+
+                while (pageEndLine < layout.lineCount) {
+                    val lineBottom = layout.getLineBottom(pageEndLine)
+                    if ((lineBottom - pageTopOffset) > usableHeight && pageEndLine > pageStartLine) {
+                        break
+                    }
+                    pageEndLine++
+                }
+
+                val renderScale = 2f
+                val bmpW = (pageWidth * renderScale).toInt().coerceAtLeast(1)
+                val bmpH = (pageHeight * renderScale).toInt().coerceAtLeast(1)
+                val pageBmp = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+                val pageCanvas = Canvas(pageBmp)
+                pageCanvas.drawColor(Color.WHITE)
+                pageCanvas.save()
+                pageCanvas.scale(renderScale, renderScale)
+                pageCanvas.translate(margin, margin - pageTopOffset)
+                pageCanvas.clipRect(0f, pageTopOffset.toFloat(), usableWidth.toFloat(), layout.getLineBottom(pageEndLine - 1).toFloat())
+                layout.draw(pageCanvas)
+                pageCanvas.restore()
+
+                val page = PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
+                doc.addPage(page)
+
+                val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, pageBmp)
+                pageBmp.recycle()
+
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc, page).use { cs ->
+                    cs.drawImage(pdImage, 0f, 0f, pageWidth.toFloat(), pageHeight.toFloat())
+                }
+                currentLine = pageEndLine
+            }
+
+            doc.save(targetFile)
+            targetFile.exists() && targetFile.length() > 0
+        } catch (e: Throwable) {
+            targetFile.delete()
+            false
+        } finally {
+            try {
+                doc?.close()
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -1306,13 +1634,12 @@ object PdfEngine {
             }
 
             val totalPages = sourceDoc.numberOfPages
-            val validIndices = pageIndicesToKeep.filter { it in 0 until totalPages }
-            if (validIndices.isEmpty()) {
+            if (pageIndicesToKeep.any { it !in 0 until totalPages }) {
                 return@withContext null
             }
 
             newDoc = PDDocument()
-            for (idx in validIndices) {
+            for (idx in pageIndicesToKeep) {
                 coroutineContext.ensureActive()
                 val page = sourceDoc.getPage(idx)
                 newDoc.importPage(page)
@@ -1323,7 +1650,16 @@ object PdfEngine {
 
             newDoc.save(outputFile)
 
-            if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+            if (outputFile.exists() && outputFile.length() > 0) {
+                val isValid = validateGeneratedPdfFile(context, outputFile, expectedMinPages = pageIndicesToKeep.size)
+                if (isValid) outputFile else {
+                    outputFile.delete()
+                    null
+                }
+            } else {
+                outputFile.delete()
+                null
+            }
         } catch (e: CancellationException) {
             outputFile?.delete()
             throw e
@@ -1350,13 +1686,27 @@ object PdfEngine {
         outputFileName: String = "Compressed_${System.currentTimeMillis()}.pdf",
         password: String? = null,
         mode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION
-    ): File? = withContext(Dispatchers.IO) {
-        if (!pdfFile.exists() || pdfFile.length() == 0L || !hasPdfHeader(pdfFile)) return@withContext null
+    ): File? {
+        val result = compressPdfDetailed(context, pdfFile, level, outputFileName, password, mode)
+        return (result as? CompressResult.Success)?.file
+    }
+
+    suspend fun compressPdfDetailed(
+        context: Context,
+        pdfFile: File,
+        level: PdfCompressionLevel,
+        outputFileName: String = "Compressed_${System.currentTimeMillis()}.pdf",
+        password: String? = null,
+        mode: PdfCompressionMode = PdfCompressionMode.IMAGE_RECOMPRESSION
+    ): CompressResult = withContext(Dispatchers.IO) {
+        if (!pdfFile.exists() || pdfFile.length() == 0L || !hasPdfHeader(pdfFile)) {
+            return@withContext CompressResult.Error("File is missing, empty, or does not have a valid PDF header.")
+        }
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
         val outputFile = getUniqueOutputFile(outputDir, outputFileName)
 
         if (mode == PdfCompressionMode.RASTERIZE_MAXIMUM) {
-            return@withContext compressPdfByRasterizing(
+            return@withContext compressPdfByRasterizingDetailed(
                 context = context,
                 pdfFile = pdfFile,
                 level = level,
@@ -1388,24 +1738,28 @@ object PdfEngine {
             doc = null
 
             if (outputFile.exists() && outputFile.length() > 0) {
-                if (outputFile.length() > pdfFile.length()) {
-                    FileOutputStream(outputFile).use { fos ->
-                        FileInputStream(pdfFile).use { fis ->
-                            fis.copyTo(fos)
-                        }
-                    }
+                if (!validateGeneratedPdfFile(context, outputFile, expectedMinPages = 1)) {
+                    outputFile.delete()
+                    return@withContext CompressResult.Error("Generated compressed PDF failed structural validation.")
                 }
-                outputFile
+                val originalSize = pdfFile.length()
+                val candidateSize = outputFile.length()
+                if (candidateSize >= originalSize) {
+                    outputFile.delete()
+                    CompressResult.NoReduction(originalSize = originalSize, candidateSize = candidateSize)
+                } else {
+                    CompressResult.Success(file = outputFile, originalSize = originalSize, compressedSize = candidateSize)
+                }
             } else {
                 outputFile.delete()
-                null
+                CompressResult.Error("Failed to write compressed PDF output.")
             }
         } catch (e: CancellationException) {
             outputFile.delete()
             throw e
         } catch (e: Exception) {
             outputFile.delete()
-            null
+            CompressResult.Error(e.message ?: "Compression failed due to an error.")
         } finally {
             try {
                 doc?.close()
@@ -1430,6 +1784,9 @@ object PdfEngine {
             if (xObject is PDImageXObject) {
                 val rawBitmap = try {
                     xObject.image
+                } catch (oom: OutOfMemoryError) {
+                    System.gc()
+                    null
                 } catch (_: Exception) {
                     null
                 } ?: continue
@@ -1480,19 +1837,20 @@ object PdfEngine {
         }
     }
 
-    private suspend fun compressPdfByRasterizing(
+    private suspend fun compressPdfByRasterizingDetailed(
         context: Context,
         pdfFile: File,
         level: PdfCompressionLevel,
         outputFile: File,
         password: String?
-    ): File? {
+    ): CompressResult {
         var outDoc: PDDocument? = null
-        try {
+        return try {
             PDFBoxResourceLoader.init(context)
-            val meta = getPdfMetadata(context, Uri.fromFile(pdfFile), password) ?: return null
+            val meta = getPdfMetadata(context, Uri.fromFile(pdfFile), password)
+                ?: return CompressResult.Error("Could not read PDF metadata for rasterization.")
             val pageCount = meta.pageCount
-            if (pageCount <= 0) return null
+            if (pageCount <= 0) return CompressResult.Error("PDF contains no pages to compress.")
 
             outDoc = PDDocument()
             val targetWidth = (A4_WIDTH * 1.4f * level.scaleFactor).toInt().coerceIn(240, 1200)
@@ -1529,20 +1887,31 @@ object PdfEngine {
 
             if (outDoc.numberOfPages <= 0) {
                 outputFile.delete()
-                return null
+                return CompressResult.Error("Failed to render pages for rasterized compression.")
             }
 
             outDoc.save(outputFile)
             outDoc.close()
             outDoc = null
 
-            return if (outputFile.exists() && outputFile.length() > 0) outputFile else null
+            if (outputFile.exists() && outputFile.length() > 0) {
+                if (!validateGeneratedPdfFile(context, outputFile, expectedMinPages = 1)) {
+                    outputFile.delete()
+                    return CompressResult.Error("Rasterized compressed PDF failed structural validation.")
+                }
+                val originalSize = pdfFile.length()
+                val candidateSize = outputFile.length()
+                CompressResult.Success(file = outputFile, originalSize = originalSize, compressedSize = candidateSize)
+            } else {
+                outputFile.delete()
+                CompressResult.Error("Failed to write rasterized compressed output.")
+            }
         } catch (e: CancellationException) {
             outputFile.delete()
             throw e
         } catch (e: Exception) {
             outputFile.delete()
-            return null
+            CompressResult.Error(e.message ?: "Rasterized compression failed.")
         } finally {
             try {
                 outDoc?.close()
@@ -2900,6 +3269,7 @@ object PdfEngine {
             return@withContext ImageConversionResult.Error("Output directory for converted images is not writable.")
         }
 
+        val ext = if (targetFormat == Bitmap.CompressFormat.PNG) "png" else "jpg"
         var tempFile: File? = null
         var outputFile: File? = null
         try {
@@ -2915,57 +3285,71 @@ object PdfEngine {
                 return@withContext ImageConversionResult.Error("Selected file is not a valid or supported image.")
             }
 
-            val maxDimension = 4096
-            var sampleSize = 1
-            if (boundsOptions.outWidth > maxDimension || boundsOptions.outHeight > maxDimension) {
-                val halfWidth = boundsOptions.outWidth / 2
-                val halfHeight = boundsOptions.outHeight / 2
-                while (halfWidth / sampleSize >= maxDimension && halfHeight / sampleSize >= maxDimension) {
-                    sampleSize *= 2
-                }
-            }
+            val sampleSize = calculateSafeImageSampleSize(
+                boundsOptions.outWidth,
+                boundsOptions.outHeight,
+                maxDimension = MAX_IMAGE_DECODE_DIMENSION_CONVERT,
+                maxPixelBudget = MAX_IMAGE_DECODE_PIXEL_BUDGET
+            )
 
             val decodeOptions = BitmapFactory.Options().apply {
                 inSampleSize = sampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
 
-            val decodedBitmap = openUriInputStream(context, imageUri)?.use { inputStream ->
-                BitmapFactory.decodeStream(inputStream, null, decodeOptions)
-            } ?: return@withContext ImageConversionResult.Error("Failed to decode image pixels.")
-
-            val rotation = readExifRotationDegrees(context, imageUri)
-            val orientedBitmap = applyRotationIfNeeded(decodedBitmap, rotation)
-
-            val bitmapToCompress = if (targetFormat == Bitmap.CompressFormat.JPEG && orientedBitmap.hasAlpha()) {
-                val flattened = Bitmap.createBitmap(
-                    orientedBitmap.width.coerceAtLeast(1),
-                    orientedBitmap.height.coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888
-                )
-                val canvas = Canvas(flattened)
-                canvas.drawColor(Color.WHITE)
-                canvas.drawBitmap(orientedBitmap, 0f, 0f, null)
-                orientedBitmap.recycle()
-                flattened
-            } else {
-                orientedBitmap
-            }
-
-            coroutineContext.ensureActive()
-
-            val ext = if (targetFormat == Bitmap.CompressFormat.PNG) "png" else "jpg"
-            tempFile = File(context.cacheDir, "temp_imgconv_${System.nanoTime()}.$ext")
-
+            var decodedBitmap: Bitmap? = null
+            var orientedBitmap: Bitmap? = null
+            var bitmapToCompress: Bitmap? = null
             try {
+                decodedBitmap = openUriInputStream(context, imageUri)?.use { inputStream ->
+                    BitmapFactory.decodeStream(inputStream, null, decodeOptions)
+                } ?: return@withContext ImageConversionResult.Error("Failed to decode image pixels.")
+
+                if (!isSafeBitmapAllocation(decodedBitmap.width, decodedBitmap.height)) {
+                    return@withContext ImageConversionResult.Error("Image dimensions exceed safe memory budget.")
+                }
+
+                val rotation = readExifRotationDegrees(context, imageUri)
+                orientedBitmap = applyRotationIfNeeded(decodedBitmap, rotation)
+
+                bitmapToCompress = if (targetFormat == Bitmap.CompressFormat.JPEG && orientedBitmap.hasAlpha()) {
+                    val flattened = Bitmap.createBitmap(
+                        orientedBitmap.width.coerceAtLeast(1),
+                        orientedBitmap.height.coerceAtLeast(1),
+                        Bitmap.Config.ARGB_8888
+                    )
+                    val canvas = Canvas(flattened)
+                    canvas.drawColor(Color.WHITE)
+                    canvas.drawBitmap(orientedBitmap, 0f, 0f, null)
+                    flattened
+                } else {
+                    orientedBitmap
+                }
+
+                coroutineContext.ensureActive()
+
+                val ext = if (targetFormat == Bitmap.CompressFormat.PNG) "png" else "jpg"
+                tempFile = File(context.cacheDir, "temp_imgconv_${System.nanoTime()}.$ext")
+
                 FileOutputStream(tempFile).use { fos ->
                     val quality = if (targetFormat == Bitmap.CompressFormat.PNG) 100 else 92
                     if (!bitmapToCompress.compress(targetFormat, quality, fos)) {
                         throw IllegalStateException("Failed to encode target image format")
                     }
                 }
+            } catch (oom: OutOfMemoryError) {
+                tempFile?.delete()
+                return@withContext ImageConversionResult.Error("Out of memory during image conversion. Please use a smaller image.")
             } finally {
-                bitmapToCompress.recycle()
+                if (bitmapToCompress != null && bitmapToCompress != orientedBitmap && bitmapToCompress != decodedBitmap && !bitmapToCompress.isRecycled) {
+                    bitmapToCompress.recycle()
+                }
+                if (orientedBitmap != null && orientedBitmap != decodedBitmap && !orientedBitmap.isRecycled) {
+                    orientedBitmap.recycle()
+                }
+                if (decodedBitmap != null && !decodedBitmap.isRecycled) {
+                    decodedBitmap.recycle()
+                }
             }
 
             val dimensions = validateImageFile(tempFile) ?: run {

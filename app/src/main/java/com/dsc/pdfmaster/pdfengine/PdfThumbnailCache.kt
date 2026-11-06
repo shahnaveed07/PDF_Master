@@ -13,23 +13,37 @@ import java.io.File
 
 object PdfThumbnailCache {
 
-    // Cache up to 40 thumbnails in memory (around ~15-20MB max)
-    private val memoryCache: LruCache<String, Bitmap> = object : LruCache<String, Bitmap>(40) {
-        override fun sizeOf(key: String, value: Bitmap): Int {
-            return 1
-        }
+    private val maxCacheSizeKb: Int = run {
+        val maxMemKb = (Runtime.getRuntime().maxMemory() / 1024L).toInt()
+        (maxMemKb / 8).coerceIn(4 * 1024, 32 * 1024)
+    }
 
-        override fun entryRemoved(evicted: Boolean, key: String?, oldValue: Bitmap?, newValue: Bitmap?) {
-            // Let GC collect or recycle if evicted
+    private val memoryCache: LruCache<String, Bitmap> = object : LruCache<String, Bitmap>(maxCacheSizeKb) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            return (value.allocationByteCount / 1024).coerceAtLeast(1)
         }
     }
 
-    private fun buildKey(filePath: String, pageIndex: Int, targetWidth: Int): String {
-        return "$filePath:$pageIndex:$targetWidth"
+    fun buildKey(file: File, pageIndex: Int, targetWidth: Int): String {
+        val modTime = if (file.exists()) file.lastModified() else 0L
+        val size = if (file.exists()) file.length() else 0L
+        return "${file.absolutePath}:$modTime:$size:$pageIndex:$targetWidth"
+    }
+
+    fun buildKey(filePath: String, pageIndex: Int, targetWidth: Int): String {
+        val file = File(filePath)
+        return buildKey(file, pageIndex, targetWidth)
     }
 
     fun getFromMemory(filePath: String, pageIndex: Int, targetWidth: Int): Bitmap? {
-        return memoryCache.get(buildKey(filePath, pageIndex, targetWidth))
+        val key = buildKey(filePath, pageIndex, targetWidth)
+        val cached = memoryCache.get(key)
+        return if (cached != null && !cached.isRecycled) {
+            cached
+        } else {
+            if (cached != null) memoryCache.remove(key)
+            null
+        }
     }
 
     suspend fun loadThumbnail(
@@ -38,8 +52,8 @@ object PdfThumbnailCache {
         pageIndex: Int,
         targetWidth: Int = 240
     ): Bitmap? = withContext(Dispatchers.IO) {
-        val key = buildKey(pdfFile.absolutePath, pageIndex, targetWidth)
-        memoryCache.get(key)?.let { return@withContext it }
+        val key = buildKey(pdfFile, pageIndex, targetWidth)
+        getFromMemory(pdfFile.absolutePath, pageIndex, targetWidth)?.let { return@withContext it }
 
         var pfd: ParcelFileDescriptor? = null
         var renderer: PdfRenderer? = null
@@ -54,6 +68,8 @@ object PdfThumbnailCache {
                 val originalHeight = page.height
                 val scale = targetWidth.toFloat() / originalWidth.coerceAtLeast(1)
                 val targetHeight = (originalHeight * scale).toInt().coerceAtLeast(60)
+
+                if (!PdfEngine.isSafeBitmapAllocation(targetWidth, targetHeight)) return@withContext null
 
                 val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bitmap)

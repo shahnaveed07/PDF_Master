@@ -706,9 +706,10 @@ fun PdfViewerScreen(
                             ) {
                                 items(count = pageCount, key = { "thumb_$it" }) { idx ->
                                     val file = currentPdfFile
+                                    val fileVersionKey = file?.let { "${it.absolutePath}:${it.lastModified()}:${it.length()}" }
                                     val thumbBmp by produceState<Bitmap?>(
                                         initialValue = file?.let { viewModel.bitmapCache.get(it, idx, 160) },
-                                        key1 = file?.absolutePath,
+                                        key1 = fileVersionKey,
                                         key2 = idx
                                     ) {
                                         if (value == null && file != null) {
@@ -795,11 +796,12 @@ fun PdfViewerScreen(
                         ) {
                             items(count = pageCount, key = { index -> index }) { index ->
                                 val file = currentPdfFile
+                                val fileVersionKey = file?.let { "${it.absolutePath}:${it.lastModified()}:${it.length()}" }
                                 val bitmap by produceState<Bitmap?>(
                                     initialValue = file?.let {
                                         viewModel.bitmapCache.get(it, index, displayTargetWidth)
                                     },
-                                    key1 = file?.absolutePath,
+                                    key1 = fileVersionKey,
                                     key2 = index,
                                     key3 = verifiedPassword
                                 ) {

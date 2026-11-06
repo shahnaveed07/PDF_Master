@@ -37,3 +37,8 @@
 -keep class com.dsc.pdfmaster.ui.viewmodel.** { *; }
 -keep class com.dsc.pdfmaster.di.** { *; }
 
+# PDF Master Engine & Local MLKit Utilities
+-keep class com.dsc.pdfmaster.pdfengine.** { *; }
+-keep class com.dsc.pdfmaster.mlkit.** { *; }
+
+

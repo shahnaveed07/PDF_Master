@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.dsc.pdfmaster.data.model.OcrSearchablePdfResult
 import com.dsc.pdfmaster.data.model.PdfOperationError
 import com.dsc.pdfmaster.data.repository.PdfRepository
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.dsc.pdfmaster.mlkit.vision.text.latin.TextRecognizerOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

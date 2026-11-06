@@ -11,6 +11,9 @@ interface RecentPdfDao {
     @Query("SELECT * FROM recent_pdfs ORDER BY lastAccessedTimestamp DESC")
     fun getAllRecentPdfs(): Flow<List<RecentPdfEntity>>
 
+    @Query("SELECT * FROM recent_pdfs")
+    suspend fun getAllRecentPdfsSnapshot(): List<RecentPdfEntity>
+
     @Query("SELECT * FROM recent_pdfs WHERE isFavorite = 1 ORDER BY isPinned DESC, lastAccessedTimestamp DESC")
     fun getFavoritePdfs(): Flow<List<RecentPdfEntity>>
 

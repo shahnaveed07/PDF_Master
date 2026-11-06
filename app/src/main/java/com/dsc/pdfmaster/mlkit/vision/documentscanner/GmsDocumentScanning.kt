@@ -1,4 +1,4 @@
-package com.google.mlkit.vision.documentscanner
+package com.dsc.pdfmaster.mlkit.vision.documentscanner
 
 import android.app.Activity
 import android.content.Intent

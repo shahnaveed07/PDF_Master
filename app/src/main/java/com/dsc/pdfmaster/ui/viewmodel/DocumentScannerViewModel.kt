@@ -7,7 +7,7 @@ import com.dsc.pdfmaster.data.model.PdfOperationError
 import com.dsc.pdfmaster.data.model.ScannedPageDraft
 import com.dsc.pdfmaster.data.model.ScannerFilterMode
 import com.dsc.pdfmaster.data.repository.PdfRepository
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import com.dsc.pdfmaster.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

@@ -123,6 +123,8 @@ private class FakeRecentPdfDao : RecentPdfDao {
     override suspend fun clearAllRecentPdfs() {
         itemsFlow.value = emptyList()
     }
+
+    override suspend fun getAllRecentPdfsSnapshot(): List<RecentPdfEntity> = itemsFlow.value
 }
 
 @RunWith(RobolectricTestRunner::class)
