@@ -130,4 +130,76 @@ class NavigationAndReliabilityRegressionTest {
         assertNull(viewModel.selectedPdfFile.value)
         assertFalse(viewModel.isPdfExplicitlySelected.value)
     }
+
+    @Test
+    fun test_scannerTask_failureListenerInvokedRegardlessOfChainingOrder() {
+        var failureCount1 = 0
+        var successCount1 = 0
+        val failingTask1 = com.dsc.pdfmaster.mlkit.vision.documentscanner.ScannerTask<String> {
+            throw IllegalStateException("Module not installed")
+        }
+        failingTask1
+            .addOnSuccessListener { successCount1++ }
+            .addOnFailureListener { failureCount1++ }
+
+        assertEquals(0, successCount1)
+        assertEquals(1, failureCount1)
+
+        // Reverse chaining order
+        var failureCount2 = 0
+        var successCount2 = 0
+        val failingTask2 = com.dsc.pdfmaster.mlkit.vision.documentscanner.ScannerTask<String> {
+            throw IllegalStateException("Module not installed")
+        }
+        failingTask2
+            .addOnFailureListener { failureCount2++ }
+            .addOnSuccessListener { successCount2++ }
+
+        assertEquals(0, successCount2)
+        assertEquals(1, failureCount2)
+    }
+
+    @Test
+    fun test_ocrTask_doesNotDoubleExecuteSupplier() {
+        var execCount = 0
+        val task = com.dsc.pdfmaster.mlkit.vision.text.OcrTask {
+            execCount++
+            "Hello OCR"
+        }
+        var deliveredText: String? = null
+        task
+            .addOnSuccessListener { deliveredText = it }
+            .addOnFailureListener { }
+
+        assertEquals(1, execCount)
+        assertEquals("Hello OCR", deliveredText)
+        assertEquals("Hello OCR", task.execute())
+        assertEquals(1, execCount)
+    }
+
+    @Test
+    fun test_ocr_pageToPageIsolation_andNoSyntheticTokensForBlankPages() {
+        val bitmap1 = android.graphics.Bitmap.createBitmap(800, 600, android.graphics.Bitmap.Config.ARGB_8888)
+        val bitmap2 = android.graphics.Bitmap.createBitmap(800, 600, android.graphics.Bitmap.Config.ARGB_8888)
+
+        com.dsc.pdfmaster.mlkit.vision.text.TextRecognition.registerBitmapTextHints(
+            bitmap1,
+            listOf(com.dsc.pdfmaster.mlkit.vision.text.TextRecognition.HintTextLine("Page 1 Unique Invoice", android.graphics.Rect(10, 10, 200, 40)))
+        )
+
+        val recognizer = com.dsc.pdfmaster.mlkit.vision.text.TextRecognition.getClient()
+
+        // Page 1 gets Page 1 text
+        val text1 = recognizer.processSync(com.dsc.pdfmaster.mlkit.vision.common.InputImage.fromBitmap(bitmap1, 0))
+        assertEquals("Page 1 Unique Invoice", text1.text)
+
+        // Page 2 (identical dimensions) must NOT receive Page 1 text or fake tokens
+        val text2 = recognizer.processSync(com.dsc.pdfmaster.mlkit.vision.common.InputImage.fromBitmap(bitmap2, 0))
+        assertEquals("", text2.text)
+        assertTrue(text2.textBlocks.isEmpty())
+
+        recognizer.close()
+        bitmap1.recycle()
+        bitmap2.recycle()
+    }
 }

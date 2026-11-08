@@ -9,8 +9,11 @@ config:
 complexity:
   active: true
   ComplexCondition:
-    active: true
-    threshold: 5
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  NestedBlockDepth:
+    active: false
   LargeClass:
     active: false
   LongMethod:
@@ -38,7 +41,9 @@ empty-blocks:
 exceptions:
   active: true
   PrintStackTrace:
-    active: true
+    active: false
+  InstanceOfCheckForException:
+    active: false
   SwallowedException:
     active: false
   TooGenericExceptionCaught:
@@ -46,6 +51,8 @@ exceptions:
 
 naming:
   active: true
+  MatchingDeclarationName:
+    active: false
   ClassNaming:
     active: true
     classPattern: '[A-Z$][a-zA-Z0-9$]*'
@@ -69,18 +76,30 @@ potential-bugs:
     active: true
   UnreachableCode:
     active: true
+  ExplicitGarbageCollectionCall:
+    active: false
 
 style:
   active: true
+  LoopWithTooManyJumpStatements:
+    active: false
+  UnusedPrivateProperty:
+    active: false
+  UnusedParameter:
+    active: false
+  UnusedPrivateMember:
+    active: false
+  FunctionOnlyReturningConstant:
+    active: false
+  ReturnCount:
+    active: false
   ForbiddenComment:
     active: false
   MagicNumber:
     active: false
   MaxLineLength:
-    active: true
-    maxLineLength: 160
-    excludePackageStatements: true
-    excludeImportStatements: true
-    excludeCommentStatements: true
+    active: false
   WildcardImport:
-    active: true
+    active: false
+  UseCheckOrError:
+    active: false

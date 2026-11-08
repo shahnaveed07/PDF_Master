@@ -685,17 +685,12 @@ class PdfRepository @Inject constructor(
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
         val sampleFile = File(outputDir, "Welcome_PDF_Master.pdf")
         if (sampleFile.exists() && sampleFile.length() > 0 && PdfEngine.hasPdfHeader(sampleFile)) {
-            val existing = dao.getPdfByPath(sampleFile.absolutePath)
-            if (existing == null) {
-                registerPdfFile(sampleFile)
-            }
             sampleFile
         } else {
             val prefs = context.getSharedPreferences("pdf_master_repo_prefs", Context.MODE_PRIVATE)
             val alreadyGenerated = prefs.getBoolean("starter_pdf_generated", false)
             if (!alreadyGenerated) {
                 val starterFile = PdfEngine.createSampleWelcomePdf(context)
-                registerPdfFile(starterFile)
                 prefs.edit().putBoolean("starter_pdf_generated", true).apply()
                 starterFile
             } else {

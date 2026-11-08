@@ -1001,7 +1001,7 @@ object PdfAdvancedToolsEngine {
                         val summary = appendOcrPageToDocument(
                             outDoc = outDoc,
                             recognizer = recognizer,
-                            pageBitmap = pageBitmap,
+                            inputImage = InputImage.fromBitmap(pageBitmap, 0),
                             pageIndex = pageIndex
                         )
                         pageSummaries.add(summary)
@@ -1018,7 +1018,7 @@ object PdfAdvancedToolsEngine {
                         val summary = appendOcrPageToDocument(
                             outDoc = outDoc,
                             recognizer = recognizer,
-                            pageBitmap = bitmap,
+                            inputImage = inputImage,
                             pageIndex = pageIndex
                         )
                         pageSummaries.add(summary)
@@ -1074,10 +1074,10 @@ object PdfAdvancedToolsEngine {
     private fun appendOcrPageToDocument(
         outDoc: PDDocument,
         recognizer: TextRecognizer,
-        pageBitmap: Bitmap,
+        inputImage: InputImage,
         pageIndex: Int
     ): OcrPageSummary {
-        val inputImage = InputImage.fromBitmap(pageBitmap, 0)
+        val pageBitmap = inputImage.bitmap ?: throw IllegalArgumentException("Bitmap cannot be null")
         val visionText = recognizer.processSync(inputImage)
 
         val imgW = pageBitmap.width.coerceAtLeast(1)

@@ -98,22 +98,39 @@ class GmsDocumentScanningResult(
 class ScannerTask<T>(
     private val supplier: () -> T
 ) {
+    private var executed = false
+    private var result: T? = null
+    private var error: Exception? = null
     private var successListener: ((T) -> Unit)? = null
     private var failureListener: ((Exception) -> Unit)? = null
 
+    private fun runSupplier() {
+        if (!executed) {
+            executed = true
+            try {
+                result = supplier()
+            } catch (e: Exception) {
+                error = e
+            }
+        }
+    }
+
     fun addOnSuccessListener(listener: (T) -> Unit): ScannerTask<T> {
         successListener = listener
-        try {
-            val result = supplier()
-            listener(result)
-        } catch (e: Exception) {
-            failureListener?.invoke(e)
+        runSupplier()
+        if (error == null && result != null) {
+            @Suppress("UNCHECKED_CAST")
+            listener(result as T)
         }
         return this
     }
 
     fun addOnFailureListener(listener: (Exception) -> Unit): ScannerTask<T> {
         failureListener = listener
+        runSupplier()
+        if (error != null) {
+            listener(error!!)
+        }
         return this
     }
 }
