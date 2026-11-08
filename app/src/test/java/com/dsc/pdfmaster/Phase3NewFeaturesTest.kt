@@ -55,7 +55,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class Phase3NewFeaturesTest {
 
     private lateinit var application: Application
@@ -412,6 +412,17 @@ class Phase3NewFeaturesTest {
         recognizer.close()
 
         val imageFile = File(application.cacheDir, "scanned_receipt.png")
+        val hintLines = listOf(
+            TextRecognition.HintTextLine(
+                text = "INVOICE #98412 PAID OFFLINE",
+                boundingBox = Rect(40, 90, 520, 130)
+            ),
+            TextRecognition.HintTextLine(
+                text = "TOTAL AMOUNT: $1,250.00",
+                boundingBox = Rect(40, 170, 440, 210)
+            )
+        )
+        TextRecognition.registerPathTextHints(imageFile.absolutePath, hintLines)
         FileOutputStream(imageFile).use { out ->
             scanBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }

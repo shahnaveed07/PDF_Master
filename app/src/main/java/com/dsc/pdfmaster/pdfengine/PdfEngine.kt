@@ -1494,19 +1494,44 @@ object PdfEngine {
     }
 
     /**
-     * Prevents overwriting PDF files by appending a counter e.g. document_extracted (1).pdf
+     * Sanitizes a user-supplied or default file name to prevent path traversal attacks,
+     * stripping directories, control characters, and reserved symbols.
+     */
+    fun sanitizeFileName(rawName: String, fallback: String = "Document"): String {
+        // Strip any directory traversal paths (e.g. ../, ..\, /etc/, C:\)
+        val baseName = File(rawName).name
+        // Remove illegal/control characters: / \ : * ? " < > | \r \n \t
+        val sanitized = baseName.replace(Regex("[\\\\/:*?\"<>|\\r\\n\\t]"), "_").trim()
+        val withoutExt = if (sanitized.endsWith(".pdf", ignoreCase = true)) {
+            sanitized.substring(0, sanitized.length - 4).trim()
+        } else {
+            sanitized
+        }
+        val clean = withoutExt.trim('.', ' ', '_')
+        return if (clean.isBlank()) fallback else clean
+    }
+
+    /**
+     * Prevents overwriting PDF files by appending a counter e.g. document (1).pdf
+     * while guaranteeing the resolved file is strictly contained within [dir].
      */
     fun getUniqueOutputFile(dir: File, desiredName: String): File {
-        val cleanName = if (desiredName.endsWith(".pdf", ignoreCase = true)) {
-            desiredName.substring(0, desiredName.length - 4)
-        } else {
-            desiredName
+        if (!dir.exists()) {
+            dir.mkdirs()
         }
+        val cleanName = sanitizeFileName(desiredName, "PDF_Document_${System.currentTimeMillis()}")
         var candidate = File(dir, "$cleanName.pdf")
         var counter = 1
         while (candidate.exists()) {
             candidate = File(dir, "$cleanName ($counter).pdf")
             counter++
+        }
+        // Strict boundary check: ensure candidate never escapes dir
+        val canonicalDir = dir.canonicalFile
+        val canonicalCandidate = candidate.canonicalFile
+        check(canonicalCandidate.parentFile?.canonicalPath == canonicalDir.canonicalPath ||
+              canonicalCandidate.canonicalPath.startsWith(canonicalDir.canonicalPath)) {
+            "Path traversal violation: Output file resolved outside of managed directory"
         }
         return candidate
     }

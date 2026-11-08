@@ -139,48 +139,70 @@ fun PdfMasterApp(
         }
     }
 
-    // Keep NavController in sync with ViewModel route changes
-    LaunchedEffect(currentRoute) {
-        val currentNavScreen = navController.currentDestination.toScreenRoute()
-        if (currentNavScreen != null && currentNavScreen != currentRoute) {
-            val targetAppRoute = currentRoute.toAppRoute()
-            if (currentRoute == ScreenRoute.HOME) {
-                val popped = navController.popBackStack(HomeRoute, inclusive = false)
-                if (!popped) {
-                    navController.navigate(HomeRoute) {
+    // Synchronize top-level navigation requests emitted from ViewModel
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvents.collect { route ->
+            val currentNavScreen = navController.currentDestination.toScreenRoute()
+            if (currentNavScreen != route) {
+                val targetAppRoute = route.toAppRoute()
+                if (route == ScreenRoute.HOME) {
+                    val popped = navController.popBackStack(HomeRoute, inclusive = false)
+                    if (!popped) {
+                        navController.navigate(HomeRoute) {
+                            launchSingleTop = true
+                        }
+                    }
+                } else if (route in listOf(ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
+                    navController.navigate(targetAppRoute) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                } else {
+                    navController.navigate(targetAppRoute) {
                         launchSingleTop = true
                     }
-                }
-            } else if (currentRoute in listOf(ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
-                navController.navigate(targetAppRoute) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        saveState = true
-                    }
-                    launchSingleTop = true
-                    restoreState = true
-                }
-            } else {
-                navController.navigate(targetAppRoute) {
-                    launchSingleTop = true
                 }
             }
         }
     }
 
-    // Keep ViewModel route in sync when NavController navigates back
+    // Inform ViewModel when destination changes so screen-specific state resets execute
     LaunchedEffect(destinationRoute) {
-        if (destinationRoute != null && destinationRoute != currentRoute) {
-            viewModel.navigateTo(destinationRoute)
+        if (destinationRoute != null) {
+            viewModel.updateCurrentRouteFromNav(destinationRoute)
         }
     }
 
-    BackHandler(enabled = currentRoute != ScreenRoute.HOME) {
+    val handleBack: () -> Unit = {
         if (!navController.popBackStack()) {
-            viewModel.navigateBack()
+            viewModel.updateCurrentRouteFromNav(ScreenRoute.HOME)
+        }
+    }
+
+    BackHandler(enabled = destinationRoute != null && destinationRoute != ScreenRoute.HOME) {
+        handleBack()
+    }
+
+    val navigateToTab: (ScreenRoute) -> Unit = { route ->
+        viewModel.updateCurrentRouteFromNav(route)
+        val targetAppRoute = route.toAppRoute()
+        if (route == ScreenRoute.HOME) {
+            val popped = navController.popBackStack(HomeRoute, inclusive = false)
+            if (!popped) {
+                navController.navigate(HomeRoute) {
+                    launchSingleTop = true
+                }
+            }
         } else {
-            val updated = navController.currentDestination.toScreenRoute() ?: ScreenRoute.HOME
-            if (updated != currentRoute) {
-                viewModel.navigateTo(updated)
+            navController.navigate(targetAppRoute) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
             }
         }
     }
@@ -231,7 +253,7 @@ fun PdfMasterApp(
                     if (showNav && windowInfo.isCompact) {
                         PdfBottomNavigationBar(
                             currentRoute = effectiveRoute,
-                            onNavigate = { route -> viewModel.navigateTo(route) }
+                            onNavigate = { route -> navigateToTab(route) }
                         )
                     }
                 },
@@ -265,103 +287,103 @@ fun PdfMasterApp(
                         composable<PdfViewerRoute> {
                             PdfViewerScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<CreatePdfRoute> {
                             CreatePdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<ConvertPdfRoute> {
                             ConvertPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<RemovePasswordRoute> {
                             RemovePasswordScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<ExtractPagesRoute> {
                             ExtractPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<MergePdfRoute> {
                             MergePdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<SplitPdfRoute> {
                             SplitPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<CompressPdfRoute> {
                             CompressPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<ImagesToPdfRoute> {
                             ImagesToPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<ManagePagesRoute> {
                             ManagePagesScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<PasswordProtectRoute> {
                             PasswordProtectScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<SignPdfRoute> {
                             SignPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<AnnotatePdfRoute> {
                             AnnotatePdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<WatermarkPdfRoute> {
                             WatermarkPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<OcrPdfRoute> {
                             OcrPdfScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<DocumentScannerRoute> {
                             DocumentScannerScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                         composable<SettingsRoute> {
                             SettingsScreen(
                                 viewModel = viewModel,
-                                onBack = { viewModel.navigateBack() }
+                                onBack = { handleBack() }
                             )
                         }
                     }
@@ -369,7 +391,8 @@ fun PdfMasterApp(
                     if (isProcessing && effectiveRoute != ScreenRoute.HOME) {
                         ProcessingDialog(
                             message = processingMessage,
-                            onDismissRequest = { viewModel.resetProcessingState() }
+                            onDismissRequest = { viewModel.resetProcessingState() },
+                            onCancelWork = { viewModel.cancelActiveOperation() }
                         )
                     }
                 }
@@ -381,7 +404,7 @@ fun PdfMasterApp(
                 drawerContent = {
                     PdfNavigationDrawerContent(
                         currentRoute = effectiveRoute,
-                        onNavigate = { route -> viewModel.navigateTo(route) }
+                        onNavigate = { route -> navigateToTab(route) }
                     )
                 }
             ) {
@@ -391,7 +414,7 @@ fun PdfMasterApp(
             Row(modifier = Modifier.fillMaxSize()) {
                 PdfNavigationRail(
                     currentRoute = effectiveRoute,
-                    onNavigate = { route -> viewModel.navigateTo(route) }
+                    onNavigate = { route -> navigateToTab(route) }
                 )
                 Box(modifier = Modifier.weight(1f)) {
                     AppScaffoldContent()

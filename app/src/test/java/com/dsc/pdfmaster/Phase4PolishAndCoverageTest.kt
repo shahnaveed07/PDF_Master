@@ -128,7 +128,7 @@ private class FakeRecentPdfDao : RecentPdfDao {
 }
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class Phase4PolishAndCoverageTest {
 
     @get:Rule

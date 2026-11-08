@@ -109,7 +109,12 @@ class RecentViewModel @Inject constructor(
 
     fun deletePdf(filePath: String) {
         viewModelScope.launch {
-            repository.deletePdf(filePath)
+            val res = repository.deletePdf(filePath)
+            if (res is PdfRepository.DeleteResult.Failed) {
+                _error.value = PdfOperationError.Unknown(res.message)
+            } else if (res is PdfRepository.DeleteResult.PermissionDenied) {
+                _error.value = PdfOperationError.RevokedPermission()
+            }
         }
     }
 

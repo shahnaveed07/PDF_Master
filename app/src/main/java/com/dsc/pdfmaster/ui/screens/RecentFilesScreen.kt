@@ -133,7 +133,7 @@ fun RecentFilesScreen(
                 if (selectedPdfFile != null && selectedPdfFile!!.exists()) {
                     PdfViewerScreen(
                         viewModel = viewModel,
-                        onBack = {}
+                        onBack = { viewModel.setSelectedPdfFile(null) }
                     )
                 } else {
                     Column(

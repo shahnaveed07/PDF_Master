@@ -43,7 +43,7 @@ import java.io.FileNotFoundException
 import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class Phase2ArchitectureAndReliabilityTest {
 
     private lateinit var application: Application
@@ -252,7 +252,7 @@ class Phase2ArchitectureAndReliabilityTest {
     }
 
     @Test
-    fun `stale or missing file in Recent Files is detected and removable`() = runBlocking {
+    fun `stale or missing file in Recent Files is detected and removable`(): Unit = runBlocking {
         val repo = AppModule.providePdfRepository(
             application,
             AppModule.provideRecentPdfDao(AppModule.providePdfDatabase(application))

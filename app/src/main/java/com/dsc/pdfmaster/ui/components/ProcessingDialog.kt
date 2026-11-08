@@ -17,15 +17,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun ProcessingDialog(
     message: String,
-    onDismissRequest: () -> Unit = {}
+    onDismissRequest: () -> Unit = {},
+    onCancelWork: (() -> Unit)? = null
 ) {
-    Dialog(onDismissRequest = onDismissRequest) {
+    var showCancelConfirmDialog by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -58,16 +77,56 @@ fun ProcessingDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                OutlinedButton(
-                    onClick = onDismissRequest,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("dismiss_processing_dialog_button")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Dismiss", fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = onDismissRequest,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("dismiss_processing_dialog_button")
+                    ) {
+                        Text("Hide to Background", fontSize = 12.sp)
+                    }
+
+                    if (onCancelWork != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = { showCancelConfirmDialog = true },
+                            modifier = Modifier.testTag("cancel_processing_work_button")
+                        ) {
+                            Text("Cancel Work", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (showCancelConfirmDialog && onCancelWork != null) {
+        AlertDialog(
+            onDismissRequest = { showCancelConfirmDialog = false },
+            title = { Text("Cancel Operation?", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to cancel? Any partial output files will be discarded.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCancelConfirmDialog = false
+                        onCancelWork()
+                    },
+                    modifier = Modifier.testTag("confirm_cancel_processing_button")
+                ) {
+                    Text("Yes, Cancel")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showCancelConfirmDialog = false }
+                ) {
+                    Text("Keep Working")
+                }
+            }
+        )
     }
 }

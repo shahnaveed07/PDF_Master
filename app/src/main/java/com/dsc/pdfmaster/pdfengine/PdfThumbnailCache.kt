@@ -81,12 +81,12 @@ object PdfThumbnailCache {
             } else {
                 null
             }
-        } catch (e: Exception) {
+        } catch (_: Throwable) {
             null
         } finally {
-            try { page?.close() } catch (_: Exception) {}
-            try { renderer?.close() } catch (_: Exception) {}
-            try { pfd?.close() } catch (_: Exception) {}
+            try { page?.close() } catch (_: Throwable) {}
+            try { renderer?.close() } catch (_: Throwable) {}
+            try { pfd?.close() } catch (_: Throwable) {}
         }
     }
 

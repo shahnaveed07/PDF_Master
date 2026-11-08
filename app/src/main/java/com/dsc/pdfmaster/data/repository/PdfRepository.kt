@@ -340,16 +340,41 @@ class PdfRepository @Inject constructor(
         prunedCount
     }
 
-    suspend fun deletePdf(filePath: String) = withContext(Dispatchers.IO) {
-        val file = File(filePath)
-        if (file.exists()) {
-            file.delete()
-        }
-        dao.deletePdfByPath(filePath)
+    sealed class DeleteResult {
+        data object Success : DeleteResult()
+        data object RemovedFromRecentOnly : DeleteResult()
+        data object FileUnavailable : DeleteResult()
+        data object PermissionDenied : DeleteResult()
+        data class Failed(val message: String) : DeleteResult()
     }
 
-    suspend fun removeFromRecent(filePath: String) = withContext(Dispatchers.IO) {
+    suspend fun deletePdf(filePath: String): DeleteResult = withContext(Dispatchers.IO) {
+        val file = File(filePath)
+        if (!file.exists()) {
+            dao.deletePdfByPath(filePath)
+            return@withContext DeleteResult.FileUnavailable
+        }
+        if (!file.canWrite()) {
+            return@withContext DeleteResult.PermissionDenied
+        }
+        val deleted = try {
+            file.delete()
+        } catch (_: SecurityException) {
+            return@withContext DeleteResult.PermissionDenied
+        } catch (e: Exception) {
+            return@withContext DeleteResult.Failed(e.localizedMessage ?: "File deletion failed")
+        }
+        if (deleted) {
+            dao.deletePdfByPath(filePath)
+            DeleteResult.Success
+        } else {
+            DeleteResult.Failed("Could not delete file from storage")
+        }
+    }
+
+    suspend fun removeFromRecent(filePath: String): DeleteResult = withContext(Dispatchers.IO) {
         dao.deletePdfByPath(filePath)
+        DeleteResult.RemovedFromRecentOnly
     }
 
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
@@ -660,11 +685,22 @@ class PdfRepository @Inject constructor(
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
         val sampleFile = File(outputDir, "Welcome_PDF_Master.pdf")
         if (sampleFile.exists() && sampleFile.length() > 0 && PdfEngine.hasPdfHeader(sampleFile)) {
+            val existing = dao.getPdfByPath(sampleFile.absolutePath)
+            if (existing == null) {
+                registerPdfFile(sampleFile)
+            }
             sampleFile
         } else {
-            val starterFile = PdfEngine.createSampleWelcomePdf(context)
-            registerPdfFile(starterFile)
-            starterFile
+            val prefs = context.getSharedPreferences("pdf_master_repo_prefs", Context.MODE_PRIVATE)
+            val alreadyGenerated = prefs.getBoolean("starter_pdf_generated", false)
+            if (!alreadyGenerated) {
+                val starterFile = PdfEngine.createSampleWelcomePdf(context)
+                registerPdfFile(starterFile)
+                prefs.edit().putBoolean("starter_pdf_generated", true).apply()
+                starterFile
+            } else {
+                sampleFile
+            }
         }
     }
 

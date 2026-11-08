@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <files-path name="files" path="." />
-    <cache-path name="cache" path="." />
-    <external-files-path name="external_files" path="." />
+    <files-path name="output_pdfs" path="output_pdfs/" />
+    <files-path name="managed_pdfs" path="managed_pdfs/" />
+    <files-path name="output_images" path="output_images/" />
+    <files-path name="output_texts" path="output_texts/" />
+    <files-path name="imported_pdfs" path="imported_pdfs/" />
+    <cache-path name="shared_docs" path="shared_docs/" />
+    <cache-path name="temp_shares" path="temp_shares/" />
+    <external-files-path name="ext_output_pdfs" path="output_pdfs/" />
 </paths>

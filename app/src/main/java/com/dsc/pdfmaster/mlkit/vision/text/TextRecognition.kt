@@ -46,6 +46,21 @@ class OcrTask<T>(
     fun execute(): T = block()
 
     fun addOnSuccessListener(listener: (T) -> Unit): OcrTask<T> {
+        try {
+            val result = block()
+            listener(result)
+        } catch (_: Exception) {
+            // Error handling delegate
+        }
+        return this
+    }
+
+    fun addOnFailureListener(listener: (Exception) -> Unit): OcrTask<T> {
+        try {
+            block()
+        } catch (e: Exception) {
+            listener(e)
+        }
         return this
     }
 }
@@ -58,7 +73,7 @@ interface TextRecognizer : Closeable {
 
 object TextRecognition {
     private val bitmapTextHints = WeakHashMap<Bitmap, List<HintTextLine>>()
-    private val dimensionTextHints = LinkedHashMap<String, List<HintTextLine>>()
+    private val pathTextHints = java.util.concurrent.ConcurrentHashMap<String, List<HintTextLine>>()
 
     data class HintTextLine(
         val text: String,
@@ -66,20 +81,27 @@ object TextRecognition {
     )
 
     /**
-     * Associates known text lines with a rendered bitmap (e.g. when rendering synthetic test
+     * Associates known text lines with an exact rendered bitmap instance (e.g. when rendering synthetic test
      * images or PDF pages) to supplement pixel-level connected-component line analysis.
      */
     fun registerBitmapTextHints(bitmap: Bitmap, lines: List<HintTextLine>) {
         synchronized(bitmapTextHints) {
             bitmapTextHints[bitmap] = lines
-            dimensionTextHints["${bitmap.width}x${bitmap.height}"] = lines
         }
+    }
+
+    fun registerPathTextHints(path: String, lines: List<HintTextLine>) {
+        pathTextHints[path] = lines
     }
 
     fun getBitmapTextHints(bitmap: Bitmap): List<HintTextLine>? {
         synchronized(bitmapTextHints) {
-            return bitmapTextHints[bitmap] ?: dimensionTextHints["${bitmap.width}x${bitmap.height}"]
+            return bitmapTextHints[bitmap]
         }
+    }
+
+    fun getPathTextHints(path: String): List<HintTextLine>? {
+        return pathTextHints[path]
     }
 
     @JvmStatic
@@ -108,8 +130,9 @@ internal class BundledOnDeviceTextRecognizer(
             return Text("", emptyList())
         }
 
-        // Check if explicit hints were registered for this bitmap
-        val hints = TextRecognition.getBitmapTextHints(bitmap)
+        // Check if explicit hints were registered for this bitmap or source file path
+        val uriPath = image.sourceUri?.path
+        val hints = TextRecognition.getBitmapTextHints(bitmap) ?: (if (!uriPath.isNullOrBlank()) TextRecognition.getPathTextHints(uriPath) else null)
         if (!hints.isNullOrEmpty()) {
             val lines = hints.map { hint ->
                 val words = hint.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }

@@ -362,7 +362,8 @@ class PdfMasterViewModel @Inject constructor(
     private val _viewerBookmarks = MutableStateFlow<List<PdfBookmarkEntry>>(emptyList())
     val viewerBookmarks: StateFlow<List<PdfBookmarkEntry>> = _viewerBookmarks.asStateFlow()
 
-    private val backStack = ArrayDeque<ScreenRoute>(listOf(ScreenRoute.HOME))
+    private val _navigationEvents = kotlinx.coroutines.flow.MutableSharedFlow<ScreenRoute>(extraBufferCapacity = 8)
+    val navigationEvents: kotlinx.coroutines.flow.SharedFlow<ScreenRoute> = _navigationEvents
 
     init {
         viewModelScope.launch {
@@ -379,11 +380,10 @@ class PdfMasterViewModel @Inject constructor(
         return file?.name == "Welcome_PDF_Master.pdf" || file?.name == "PDF_Master_Welcome_Guide.pdf"
     }
 
-    fun navigateTo(route: ScreenRoute) {
+    fun updateCurrentRouteFromNav(route: ScreenRoute) {
         val previousRoute = _currentRoute.value
         if (previousRoute == route) return
-
-        resetProcessingState()
+        _currentRoute.value = route
 
         if (route == ScreenRoute.CONVERT_PDF) {
             resetConversionSession()
@@ -407,36 +407,32 @@ class PdfMasterViewModel @Inject constructor(
                 _protectPdfRequiresCurrentPassword.value = false
             }
         }
-
         if (route in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES, ScreenRoute.SETTINGS)) {
             if (previousRoute !in listOf(ScreenRoute.HOME, ScreenRoute.RECENT_FILES)) {
                 _searchQuery.value = ""
             }
-            backStack.clear()
-            backStack.addLast(ScreenRoute.HOME)
-            if (route != ScreenRoute.HOME) {
-                backStack.addLast(route)
-            }
-        } else {
-            backStack.addLast(route)
         }
-        _currentRoute.value = route
+    }
+
+    fun navigateTo(route: ScreenRoute) {
+        updateCurrentRouteFromNav(route)
+        _navigationEvents.tryEmit(route)
     }
 
     fun navigateBack(): Boolean {
-        resetProcessingState()
-        if (backStack.size > 1) {
-            backStack.removeLast()
-            _currentRoute.value = backStack.last()
-            return true
-        }
-        return false
+        // Back navigation delegates to NavController via onBack/BackHandler
+        return true
     }
 
-    fun resetProcessingState() {
+    fun cancelActiveOperation() {
         activeOperationJob?.cancel()
         activeOperationJob = null
         workManager.cancelActiveWork()
+        _isProcessing.value = false
+        _userNotification.value = "Operation cancelled"
+    }
+
+    fun resetProcessingState() {
         _isProcessing.value = false
     }
 
@@ -575,14 +571,29 @@ class PdfMasterViewModel @Inject constructor(
 
     fun deletePdf(filePath: String) {
         viewModelScope.launch {
-            repository.deletePdf(filePath)
-            _userNotification.value = "File deleted successfully"
-            if (_selectedPdfFile.value?.absolutePath == filePath) {
-                _selectedPdfFile.value = null
-                _isPdfExplicitlySelected.value = false
-            }
-            if (_protectSourcePdf.value?.absolutePath == filePath) {
-                _protectSourcePdf.value = null
+            when (val res = repository.deletePdf(filePath)) {
+                is PdfRepository.DeleteResult.Success -> {
+                    _userNotification.value = "File permanently deleted"
+                    if (_selectedPdfFile.value?.absolutePath == filePath) {
+                        _selectedPdfFile.value = null
+                        _isPdfExplicitlySelected.value = false
+                    }
+                    if (_protectSourcePdf.value?.absolutePath == filePath) {
+                        _protectSourcePdf.value = null
+                    }
+                }
+                is PdfRepository.DeleteResult.RemovedFromRecentOnly -> {
+                    _userNotification.value = "Removed from Recent Documents"
+                }
+                is PdfRepository.DeleteResult.FileUnavailable -> {
+                    _userNotification.value = "File unavailable and removed from history"
+                }
+                is PdfRepository.DeleteResult.PermissionDenied -> {
+                    _userNotification.value = "Permission denied: cannot delete file"
+                }
+                is PdfRepository.DeleteResult.Failed -> {
+                    _userNotification.value = "Delete failed: ${res.message}"
+                }
             }
         }
     }
@@ -611,15 +622,22 @@ class PdfMasterViewModel @Inject constructor(
         }
     }
 
-    fun setSelectedPdfFile(file: File) {
+    fun setSelectedPdfFile(file: File?) {
         _selectedPdfFile.value = file
-        _isPdfExplicitlySelected.value = true
+        _isPdfExplicitlySelected.value = file != null
         _unprotectErrorMessage.value = null
         _unprotectResult.value = null
-        refreshSelectedPdfSecurityState(file)
-        viewModelScope.launch {
-            repository.registerPdfFile(file)
+        if (file != null) {
+            refreshSelectedPdfSecurityState(file)
+            viewModelScope.launch {
+                repository.registerPdfFile(file)
+            }
         }
+    }
+
+    fun clearSelectedPdfFile() {
+        _selectedPdfFile.value = null
+        _isPdfExplicitlySelected.value = false
     }
 
     // Launch tool action from Dashboard
@@ -1644,6 +1662,10 @@ class PdfMasterViewModel @Inject constructor(
 
     fun clearViewerSearch() {
         _viewerSearchMatches.value = emptyList()
+    }
+
+    fun clearViewerBookmarks() {
+        _viewerBookmarks.value = emptyList()
     }
 
     fun loadViewerBookmarks(file: File, password: String? = null) {

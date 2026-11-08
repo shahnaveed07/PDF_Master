@@ -127,22 +127,25 @@ fun PdfViewerScreen(
     val bookmarks by viewModel.viewerBookmarks.collectAsState()
     val scope = rememberCoroutineScope()
 
-    var pageCount by remember { mutableIntStateOf(0) }
-    var isLoading by remember { mutableStateOf(true) }
-    var isPasswordProtected by remember { mutableStateOf(false) }
-    var passwordInput by remember { mutableStateOf("") }
-    var passwordError by remember { mutableStateOf<String?>(null) }
-    var isPasswordVisible by remember { mutableStateOf(false) }
-    var verifiedPassword by remember { mutableStateOf<String?>(null) }
-    var showOverflowMenu by remember { mutableStateOf(false) }
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var showFileInfoDialog by remember { mutableStateOf(false) }
-    var showBookmarksDialog by remember { mutableStateOf(false) }
-    var showSearchBar by remember { mutableStateOf(false) }
-    var searchQueryInput by remember { mutableStateOf("") }
-    var activeSearchMatchIndex by remember { mutableIntStateOf(0) }
-    var newBookmarkTitle by remember { mutableStateOf("") }
-    var renameInputText by remember { mutableStateOf("") }
+    val currentPdfPath = currentPdfFile?.absolutePath
+
+    var pageCount by remember(currentPdfPath) { mutableIntStateOf(0) }
+    var isLoading by remember(currentPdfPath) { mutableStateOf(true) }
+    var isPasswordProtected by remember(currentPdfPath) { mutableStateOf(false) }
+    var passwordInput by remember(currentPdfPath) { mutableStateOf("") }
+    var passwordError by remember(currentPdfPath) { mutableStateOf<String?>(null) }
+    var isPasswordVisible by remember(currentPdfPath) { mutableStateOf(false) }
+    var verifiedPassword by remember(currentPdfPath) { mutableStateOf<String?>(null) }
+    var showOverflowMenu by remember(currentPdfPath) { mutableStateOf(false) }
+    var showRenameDialog by remember(currentPdfPath) { mutableStateOf(false) }
+    var showFileInfoDialog by remember(currentPdfPath) { mutableStateOf(false) }
+    var showBookmarksDialog by remember(currentPdfPath) { mutableStateOf(false) }
+    var showSearchBar by remember(currentPdfPath) { mutableStateOf(false) }
+    var searchQueryInput by remember(currentPdfPath) { mutableStateOf("") }
+    var activeSearchMatchIndex by remember(currentPdfPath) { mutableIntStateOf(0) }
+    var newBookmarkTitle by remember(currentPdfPath) { mutableStateOf("") }
+    var renameInputText by remember(currentPdfPath) { mutableStateOf("") }
+    var loadGeneration by remember(currentPdfPath) { mutableIntStateOf(0) }
 
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -159,38 +162,65 @@ fun PdfViewerScreen(
         }
     }
 
-    LaunchedEffect(currentPdfFile, verifiedPassword) {
+    // Reset bookmarks and search whenever the active PDF changes
+    LaunchedEffect(currentPdfPath) {
+        viewModel.clearViewerSearch()
+        viewModel.clearViewerBookmarks()
+    }
+
+    LaunchedEffect(currentPdfPath, verifiedPassword) {
         val file = currentPdfFile
+        val thisGen = ++loadGeneration
         if (file != null && file.exists()) {
             isLoading = true
+            passwordError = null
             withContext(Dispatchers.IO) {
                 try {
                     val isEncrypted = PdfEngine.checkPasswordProtected(context, file)
-                    isPasswordProtected = isEncrypted && verifiedPassword == null
+                    val needsPassword = isEncrypted && (verifiedPassword == null || !PdfEngine.verifyPdfPassword(context, file, verifiedPassword!!))
+                    
+                    if (thisGen != loadGeneration) return@withContext
 
-                    if (!isPasswordProtected) {
+                    withContext(Dispatchers.Main) {
+                        isPasswordProtected = needsPassword
+                    }
+
+                    if (!needsPassword) {
                         val meta = PdfEngine.getPdfMetadata(context, android.net.Uri.fromFile(file), verifiedPassword)
                         val loadedCount = meta?.pageCount ?: 0
-                        pageCount = loadedCount
+                        if (thisGen != loadGeneration) return@withContext
+                        
                         val savedLastPage = viewModel.getLastReadPage(file.absolutePath)
                         viewModel.loadViewerBookmarks(file, verifiedPassword)
                         withContext(Dispatchers.Main) {
+                            pageCount = loadedCount
                             if (loadedCount > 0 && savedLastPage in 1 until loadedCount) {
                                 lazyListState.scrollToItem(savedLastPage)
                             }
                         }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            pageCount = 0
+                        }
                     }
                 } catch (_: Exception) {
-                    pageCount = 0
+                    if (thisGen == loadGeneration) {
+                        withContext(Dispatchers.Main) {
+                            pageCount = 0
+                        }
+                    }
                 } finally {
-                    withContext(Dispatchers.Main) {
-                        isLoading = false
+                    if (thisGen == loadGeneration) {
+                        withContext(Dispatchers.Main) {
+                            isLoading = false
+                        }
                     }
                 }
             }
         } else {
             pageCount = 0
             isLoading = false
+            isPasswordProtected = false
         }
     }
 

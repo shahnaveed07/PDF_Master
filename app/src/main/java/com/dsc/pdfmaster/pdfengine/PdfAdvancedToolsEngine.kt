@@ -274,10 +274,7 @@ object PdfAdvancedToolsEngine {
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L || placements.isEmpty()) return@withContext null
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-        val sanitizedName = if (outputFileName.endsWith(".pdf", ignoreCase = true)) outputFileName else "$outputFileName.pdf"
-        val outputFile = File(outputDir, sanitizedName).let { candidate ->
-            if (!candidate.exists()) candidate else File(outputDir, "${candidate.nameWithoutExtension}_${System.nanoTime()}.pdf")
-        }
+        val outputFile = PdfEngine.getUniqueOutputFile(outputDir, outputFileName)
 
         var doc: PDDocument? = null
         try {
@@ -353,10 +350,7 @@ object PdfAdvancedToolsEngine {
     ): File? = withContext(Dispatchers.IO) {
         if (!pdfFile.exists() || pdfFile.length() == 0L || annotations.isEmpty()) return@withContext null
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-        val sanitizedName = if (outputFileName.endsWith(".pdf", ignoreCase = true)) outputFileName else "$outputFileName.pdf"
-        val outputFile = File(outputDir, sanitizedName).let { candidate ->
-            if (!candidate.exists()) candidate else File(outputDir, "${candidate.nameWithoutExtension}_${System.nanoTime()}.pdf")
-        }
+        val outputFile = PdfEngine.getUniqueOutputFile(outputDir, outputFileName)
 
         var doc: PDDocument? = null
         try {
@@ -490,10 +484,7 @@ object PdfAdvancedToolsEngine {
         if (!watermarkConfig.enabled && !pageNumberConfig.enabled) return@withContext null
 
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-        val sanitizedName = if (outputFileName.endsWith(".pdf", ignoreCase = true)) outputFileName else "$outputFileName.pdf"
-        val outputFile = File(outputDir, sanitizedName).let { candidate ->
-            if (!candidate.exists()) candidate else File(outputDir, "${candidate.nameWithoutExtension}_${System.nanoTime()}.pdf")
-        }
+        val outputFile = PdfEngine.getUniqueOutputFile(outputDir, outputFileName)
 
         var doc: PDDocument? = null
         try {
@@ -961,10 +952,7 @@ object PdfAdvancedToolsEngine {
         if (sourcePdfFile == null && sourceImageUris.isEmpty()) return@withContext null
 
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-        val sanitizedName = if (outputFileName.endsWith(".pdf", ignoreCase = true)) outputFileName else "$outputFileName.pdf"
-        val outputFile = File(outputDir, sanitizedName).let { candidate ->
-            if (!candidate.exists()) candidate else File(outputDir, "${candidate.nameWithoutExtension}_${System.nanoTime()}.pdf")
-        }
+        val outputFile = PdfEngine.getUniqueOutputFile(outputDir, outputFileName)
 
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         var outDoc: PDDocument? = null
@@ -1251,10 +1239,7 @@ object PdfAdvancedToolsEngine {
     ): File? = withContext(Dispatchers.IO) {
         if (pages.isEmpty()) return@withContext null
         val outputDir = File(context.filesDir, "output_pdfs").apply { mkdirs() }
-        val sanitizedName = if (outputFileName.endsWith(".pdf", ignoreCase = true)) outputFileName else "$outputFileName.pdf"
-        val outputFile = File(outputDir, sanitizedName).let { candidate ->
-            if (!candidate.exists()) candidate else File(outputDir, "${candidate.nameWithoutExtension}_${System.nanoTime()}.pdf")
-        }
+        val outputFile = PdfEngine.getUniqueOutputFile(outputDir, outputFileName)
 
         var doc: PDDocument? = null
         try {

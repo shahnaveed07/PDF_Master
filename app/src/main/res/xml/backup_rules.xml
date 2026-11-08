@@ -5,5 +5,5 @@
     <exclude domain="file" path="output_images" />
     <exclude domain="file" path="output_texts" />
     <exclude domain="file" path="managed_pdfs" />
-    <exclude domain="database" path="pdf_master_database" />
+    <exclude domain="database" path="pdf_master_db" />
 </full-backup-content>

@@ -40,7 +40,7 @@ import org.robolectric.shadows.ShadowLooper
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class RecentFilesAndOfficePdfRegressionTest {
 
     @get:Rule
